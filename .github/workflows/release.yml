@@ -43,10 +43,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --draft --title "Tarang $TAG" --generate-notes
+          # Take the id from the create call itself: listing releases right after creating
+          # one can miss the new draft, which left tauri-action with no release to upload to.
+          if id=$(gh release view "$TAG" --json databaseId -q .databaseId 2>/dev/null); then
+            echo "Using existing release $id"
+          else
+            id=$(gh api "repos/${{ github.repository }}/releases" -f tag_name="$TAG" -f name="Tarang $TAG" \
+                   -F draft=true -F generate_release_notes=true --jq .id)
+            echo "Created draft release $id"
           fi
-          echo "id=$(gh api repos/${{ github.repository }}/releases --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)" >> "$GITHUB_OUTPUT"
+          [ -n "$id" ] || { echo "no release id"; exit 1; }
+          echo "id=$id" >> "$GITHUB_OUTPUT"
 
   desktop:
     needs: create-release
@@ -90,6 +97,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ env.TAG }}
+          releaseDraft: true
           includeUpdaterJson: true
           args: ${{ matrix.args }}
 
