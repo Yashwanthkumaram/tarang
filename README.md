@@ -75,3 +75,9 @@ Every non-obvious choice is written down in `docs/DECISIONS.md`. Each module has
 page under `docs/modules/` describing what it does, its public surface, and what to touch
 when changing it. The commands the UI may call are listed in `docs/API-v2.md`. Colours and
 spacing live only in CSS variables (`src/styles/tokens.css`).
+
+## License
+
+Tarang is free software under the [GNU General Public License v3.0 or later](LICENSE).
+The Android app bundles [youtubedl-android](https://github.com/JunkFood02/youtubedl-android)
+(GPL-3.0), and yt-dlp is downloaded separately and keeps its own Unlicense terms.
