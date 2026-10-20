@@ -111,7 +111,7 @@ mod platform {
         let resolve = |xargs: &'static str| {
             let bin = bin.clone();
             async move {
-                let out = offline_core::youtube::ytdlp::command(bin)
+                let out = offline_core::youtube::ytdlp::command(&bin)
                     .args(["--no-playlist", "--no-warnings", "-f", "140/bestaudio[ext=m4a]/bestaudio",
                            "--extractor-args", xargs, "-g"])
                     .arg(format!("https://music.youtube.com/watch?v={video_id}"))
