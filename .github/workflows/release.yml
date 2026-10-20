@@ -151,6 +151,11 @@ jobs:
     needs: [create-release, desktop, android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - name: Friendly release notes (download table + install steps)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/release-notes.sh "$TAG"
       - name: Publish the release (installed apps see it from now on)
         env:
           GH_TOKEN: ${{ github.token }}
