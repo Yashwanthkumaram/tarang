@@ -2875,7 +2875,7 @@ dependencies = [
 
 [[package]]
 name = "offline-player"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "offline_core",
@@ -2894,7 +2894,7 @@ dependencies = [
 
 [[package]]
 name = "offline_core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "chrono",
