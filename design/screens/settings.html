@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Player — Settings</title>
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<script>/* ?state=<id> shows only the review state tagged data-state="<id>" */(function(){var s=new URLSearchParams(location.search).get('state');if(!s)return;addEventListener('DOMContentLoaded',function(){var t=document.querySelector('[data-state="'+s+'"]');if(!t)return;for(var n=t;n&&n!==document.body;n=n.parentElement){var p=n.parentElement;if(!p)break;for(var i=0;i<p.children.length;i++){var c=p.children[i];if(c!==n&&!/^(SCRIPT|STYLE)$/.test(c.tagName)&&c.id!=='sprite')c.style.display='none';}}t.style.margin='0';window.scrollTo(0,0);});})()</script>
+<link rel="stylesheet" href="../system.css">
+<style>
+  /* Screen-specific layout only — every colour, radius and size is a system.css token */
+  .settings { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--sp-10); align-items: start; }
+  .settings__nav { position: sticky; top: calc(var(--topbar-h) + var(--sp-6)); display: flex; flex-direction: column; gap: 2px; }
+  .settings__nav .nav-item { height: 36px; }
+  .settings__body { display: flex; flex-direction: column; gap: var(--sp-8); max-width: 760px; min-width: 0; }
+  .sect { scroll-margin-top: calc(var(--topbar-h) + var(--sp-4)); }
+  /* Live cards and state-variant cards share one inset: rows carry the vertical padding, the card only the horizontal */
+  .sect .card, .states .card:not(.card--flush) { padding: 0 var(--sp-5); }
+  .sect .card > .card__foot { padding: var(--sp-4) 0; display: flex; gap: var(--sp-2); flex-wrap: wrap; align-items: center; }
+  .srow__ctl { flex: none; display: flex; align-items: center; gap: var(--sp-2); }
+  .srow__ctl .select { width: 248px; }
+  .srow--block { flex-direction: column; align-items: stretch; gap: var(--sp-3); padding: var(--sp-4) 0; }
+  .srow--block > .between { gap: var(--sp-4); }
+  /* Folder path: middle-truncates — the head ellipsizes, the last segment always stays visible */
+  .path { display: flex; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: var(--fs-13); color: var(--text-2); }
+  .path__head { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: pre; }
+  .path__tail { flex: none; white-space: pre; color: var(--text); }
+
+  /* Link rows (Scan & folders, What's new, Licences): transparent at rest, gray only on hover / keyboard focus */
+  .srow--link { color: var(--text); text-decoration: none; background: transparent; }
+  .srow--link:hover { text-decoration: none; color: var(--text); }
+  .srow--link .srow__title { color: var(--text); }
+  .srow-tile { width: 40px; height: 40px; border-radius: var(--r-ctl); display: grid; place-items: center; flex: none; border: 1px solid var(--border); color: var(--text-2); }
+  .srow--link .srow__sub { color: var(--text-2); }
+  .srow--link:focus-visible { background: var(--surface-2); margin: 0 calc(var(--sp-3) * -1); padding-left: var(--sp-3); padding-right: var(--sp-3); border-radius: var(--r-ctl); outline-offset: 0; }
+  .srow--link > .icon:last-child { color: var(--text-3); }
+
+  /* Inline title badge (yt-dlp "Update available" / "Up to date") */
+  .title-badge { margin-left: var(--sp-1); vertical-align: 2px; }
+
+  /* Storage usage bar: one model — the bar is the 4.61 GB Offline Player uses; device free space is a separate stat */
+  .usage { display: flex; gap: 2px; height: 12px; border-radius: var(--r-pill); overflow: hidden; background: var(--surface-2); }
+  .usage > i { display: block; height: 100%; width: var(--w, 0%); }
+  .usage__music, .legend__dot--music { background: var(--accent); }
+  .usage__voice, .legend__dot--voice { background: var(--src-voice); }
+  .usage__cache, .legend__dot--cache { background: var(--text-3); }
+  .usage-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .usage-head strong { color: var(--text); font-weight: var(--fw-semibold); }
+  .stat--split { padding-left: var(--sp-8); border-left: 1px solid var(--border); margin-left: auto; }
+  .stat--split .stat__num { color: var(--text-2); }
+  .usage-stats { display: flex; gap: var(--sp-8); align-items: stretch; flex-wrap: nowrap; }
+  .legend { display: flex; gap: var(--sp-4) var(--sp-5); flex-wrap: wrap; }
+  .legend__item { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .legend__item strong { color: var(--text); font-weight: var(--fw-semibold); }
+  .legend__dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+
+  /* Theme picker: three mini previews built from tokens */
+  .themes { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--sp-3); }
+  .theme-opt { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-2); border: 1px solid var(--border); border-radius: var(--r-card); background: var(--surface); text-align: left; min-width: 0; }
+  .theme-opt:hover, .theme-opt.is-hover { border-color: var(--border-strong); box-shadow: var(--shadow-1); }
+  .theme-opt.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .theme-opt__preview { height: 64px; border-radius: var(--r-ctl); border: 1px solid var(--border); overflow: hidden; display: grid; grid-template-columns: 28% 1fr; }
+  .theme-opt__preview i { display: block; }
+  .theme-opt__side { background: var(--surface); border-right: 1px solid var(--border); }
+  .theme-opt__main { background: var(--page); padding: var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-1); }
+  .theme-opt__main i { height: 5px; border-radius: var(--r-pill); background: var(--border-strong); width: 70%; }
+  .theme-opt__main i:first-child { background: var(--accent); width: 40%; }
+  .theme-opt__main i:last-child { width: 55%; }
+  .theme-opt--system .theme-opt__main + .theme-opt__main { border-left: 1px solid var(--border); }
+  /* Dark mode: the dark preview is close to the card surface, so outline the mini window with the strong border */
+  :root[data-theme="dark"] .theme-opt__preview { border-color: var(--border-strong); }
+  /* Opposite-theme previews are built from the inverted toast tokens (same trick system.css uses for toasts): no new colour values */
+  .theme-opt__preview.is-inverted { --page: var(--toast-bg); --surface: color-mix(in srgb, var(--toast-bg) 88%, var(--toast-fg)); --border: color-mix(in srgb, var(--toast-fg) 18%, transparent); --border-strong: color-mix(in srgb, var(--toast-fg) 40%, transparent); }
+  .theme-opt--system .theme-opt__preview { grid-template-columns: 28% 1fr 1fr; }
+  .theme-opt--system .theme-opt__main.is-inverted { --page: var(--toast-bg); --border-strong: color-mix(in srgb, var(--toast-fg) 40%, transparent); }
+  .theme-opt__label { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); padding: 0 var(--sp-1); font-weight: var(--fw-medium); font-size: var(--fs-13); }
+  .theme-opt__label .icon { width: 16px; height: 16px; color: var(--accent-text); opacity: 0; }
+  .theme-opt.is-selected .theme-opt__label .icon { opacity: 1; }
+
+  /* yt-dlp update row */
+  .meta--ver { gap: var(--sp-1) var(--sp-2); }
+  .ver { display: inline-flex; align-items: center; gap: var(--sp-2); font-variant-numeric: tabular-nums; }
+  .ver-meta { display: inline-flex; flex-wrap: wrap; gap: 0 var(--sp-2); }
+  /* Separators only between siblings: rendered by the following item, never at the start of a line */
+  .ver-meta > span + span::before { content: "·"; color: var(--text-3); margin-right: var(--sp-2); }
+  .meta--ver .ver + .ver-meta::before { content: "·"; color: var(--text-3); margin-right: var(--sp-2); }
+
+  /* Voice speed: selected segment carries accent + weight, not just a white chip */
+  .seg__btn.is-active, .seg__btn[aria-pressed="true"] { color: var(--accent-text); font-weight: var(--fw-semibold); box-shadow: var(--shadow-1), inset 0 0 0 1px var(--accent); }
+
+  /* Disabled dependent row (crossfade length while crossfade is off) */
+  .srow.is-disabled .srow__title { color: var(--text-3); }
+  .srow.is-disabled .select, .srow.is-disabled .select:hover { color: var(--text-2); border-color: var(--border); background-color: var(--surface-2); cursor: not-allowed; }
+  .srow.is-disabled .srow__sub { color: var(--text-2); }
+
+  /* About card */
+  .about__ver { display: inline; }
+  .about__badge-inline { display: none; }
+
+  /* Section jump chips (phone + narrow): sticky under the top bar */
+  .jump { display: none; }
+  .jump__scroll { display: flex; gap: var(--sp-2); }
+  .jump__item { display: inline-flex; align-items: center; min-height: 44px; flex: none; text-decoration: none; }
+  .jump__item:hover { text-decoration: none; }
+  .jump .chip { height: 36px; }
+
+  /* Play button: system .btn padding (16px each side) squeezes the 20px glyph to 10px via svg max-width — zero it so the pause icon renders full size */
+  .btn--play { padding: 0; }
+  .player-bar .btn--play, .transport .btn--play { padding: 0; }
+  .player-bar .btn--play svg, .player-bar .btn--play .icon { width: var(--icon-20, 20px); height: 20px; max-width: none; flex: none; }
+
+  /* Skeleton label under a skeleton number; skeleton usage bar + legend mirror the loaded layout */
+  .skel-gap { margin-top: var(--sp-2); }
+  .skel--num { height: 28px; }
+  .skel--bar { height: 12px; width: 100%; border-radius: var(--r-pill); }
+  .skel--dot { width: 10px; height: 10px; border-radius: 50%; }
+
+  /* State variants gallery at the end of the page */
+  .states { border-top: 1px solid var(--border); padding-top: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-5); }
+  .states__label { font-size: var(--fs-12); font-weight: var(--fw-semibold); letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); margin-bottom: var(--sp-2); }
+
+  /* Storage bar: 4th segment (artwork) */
+  .usage__art, .legend__dot--art { background: var(--border-strong); }
+
+  /* Stream cache meter inside its row */
+  .cache-meter { display: flex; flex-direction: column; gap: var(--sp-1); width: 100%; }
+
+  /* ---------- Import from other apps ---------- */
+  /* Step 1 lives in the Settings card: three platform tiles, each opens the import sub-page at step 2 */
+  .platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+  .platform { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: var(--sp-3); padding: var(--sp-4); text-align: left; width: 100%; color: var(--text); }
+  .platform .source-card__sub { margin-top: 2px; }
+  .platform { grid-template-rows: 1fr auto; align-self: stretch; }
+  .platform__go { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-13); font-weight: var(--fw-semibold); color: var(--accent-text); }
+  .sect .card.platform { padding: var(--sp-4); }
+  .platform:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .imports .drow { padding-left: 0; padding-right: 0; }
+  .imports .drow:hover { background: transparent; }
+  .imports .src-mark { width: var(--art-row); height: var(--art-row); }
+  .imports .drow__meta .badge { flex: none; }
+
+  /* Import sub-page frames (Settings › Import from other apps › <platform>) */
+  .flow { border: 1px solid var(--border); border-radius: var(--r-card); background: var(--page); overflow: hidden; }
+  .flow__bar { display: flex; align-items: center; gap: var(--sp-2); height: var(--topbar-h); padding: 0 var(--sp-5) 0 var(--sp-3); background: var(--surface); border-bottom: 1px solid var(--border); }
+  .flow__crumb { font-size: var(--fs-13); color: var(--text-2); }
+  .flow__title { font-size: var(--fs-16); font-weight: var(--fw-semibold); }
+  .flow__body { padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-5); }
+  .flow__foot { display: flex; align-items: flex-end; gap: var(--sp-4); flex-wrap: wrap; padding: var(--sp-4) var(--sp-5); background: var(--surface); border-top: 1px solid var(--border); }
+  .flow__foot .field { flex: 1 1 220px; min-width: 0; }
+  .flow__foot .flow__cta { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-1); margin-left: auto; }
+
+  .steps { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; counter-reset: step; }
+  .steps__item { display: inline-flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-13); font-weight: var(--fw-medium); color: var(--text-3); }
+  .steps__item::before { counter-increment: step; content: counter(step); width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: var(--fs-12); font-weight: var(--fw-semibold); border: 1px solid var(--border-strong); color: var(--text-2); background: var(--surface); flex: none; }
+  .steps__item + .steps__item::after { content: none; }
+  .steps__sep { width: 24px; height: 1px; background: var(--border-strong); flex: none; }
+  .steps__item.is-done { color: var(--text-2); }
+  .steps__item.is-done::before { content: "✓"; background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+  .steps__item.is-current { color: var(--text); font-weight: var(--fw-semibold); }
+  .steps__item.is-current::before { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
+  .found { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
+  .alt { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; padding: var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
+  .alt .grow { flex: 1 1 260px; }
+  .or { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-12); font-weight: var(--fw-semibold); color: var(--text-3); text-transform: uppercase; letter-spacing: var(--track-eyebrow); }
+  .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+  .match-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+  .match-stat { padding: var(--sp-3) var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
+  .match-stat .stat__num { font-size: var(--fs-28); }
+  .stat--warn .stat__num { color: var(--warn); }
+  .mlist { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: 0 var(--sp-3) var(--sp-2); }
+  .mlist .group-head { padding-left: 0; padding-right: 0; }
+  .mlist .drow { padding-left: 0; padding-right: 0; }
+  .mlist .drow__meta .sg { margin-right: -2px; }
+  .mrow--review { align-items: start; }
+  .cands { grid-column: 2 / -1; display: flex; flex-direction: column; gap: var(--sp-1); }
+  .cand { display: flex; align-items: center; gap: var(--sp-3); min-height: 44px; padding: 0 var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-ctl); cursor: pointer; }
+  .cand:hover { background: var(--surface-2); }
+  .cand:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .cand .check { min-height: 0; }
+  .cand__main { flex: 1; min-width: 0; font-size: var(--fs-13); }
+  .cand__dur { font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .more-link { display: flex; justify-content: center; padding-top: var(--sp-2); }
+  #downloads .usage-stats { gap: var(--sp-6); }
+
+  @media (max-width: 820px) {
+    .platforms { grid-template-columns: 1fr; }
+    .platform { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; min-height: 64px; padding: var(--sp-3) var(--sp-4); }
+    .platform__go { grid-column: auto; }
+    .sect .card.platform { padding: var(--sp-3) var(--sp-4); }
+    .platform__go span { display: none; }
+    .flow { margin: 0 calc(var(--gutter) * -1); border-radius: 0; border-left: 0; border-right: 0; }
+    .flow__body { padding: var(--sp-4) var(--gutter); }
+    .flow__foot { padding: var(--sp-4) var(--gutter); }
+    .flow__foot .flow__cta { width: 100%; align-items: stretch; margin-left: 0; }
+    .flow__foot .flow__cta .btn { width: 100%; }
+    .flow__foot .flow__cta .help { text-align: center; }
+    .steps__item:not(.is-current) { font-size: 0; gap: 0; }
+    .steps__sep { width: 12px; }
+    .match-stats { gap: var(--sp-2); }
+    .match-stat { padding: var(--sp-3); }
+    .match-stat .stat__num { font-size: var(--fs-20); }
+    .cands { grid-column: 1 / -1; }
+    .found .btn { display: none; }
+    .alt .btn { flex: 1 1 100%; }
+    .usage-stats { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    /* Import lists keep status/action in a right column and let the meta line wrap so badges are never clipped */
+    .mlist .drow, .imports .drow { grid-template-columns: var(--art-row) minmax(0, 1fr) auto; }
+    .mlist .drow__actions, .imports .drow__actions { grid-column: auto; }
+    .mlist .drow__meta, .imports .drow__meta { display: flex; flex-wrap: wrap; white-space: normal; gap: 0 var(--sp-2); }
+    .mlist .drow__meta > * + *, .imports .drow__meta > * + * { margin-left: 0; }
+    .mlist .drow__meta .sg { display: inline-block; }
+    .mlist .group-head { flex-wrap: wrap; row-gap: 0; }
+    .mlist .group-head::after { display: none; }
+    .mlist .drow__actions .btn--secondary { width: 44px; padding: 0; }
+    .mlist .drow__actions .btn--secondary .lbl { display: none; }
+    .usage-stats .stat--split { grid-column: 1 / -1; }
+  }
+
+  @media (max-width: 1023px) {
+    .settings { grid-template-columns: 1fr; gap: var(--sp-6); }
+    .settings__nav { display: none; }
+    .settings__body { max-width: none; }
+    .jump {
+      display: block;
+      position: sticky; top: var(--topbar-h); z-index: 4;
+      margin: 0 calc(var(--gutter) * -1); padding: 0 var(--gutter);
+      background: color-mix(in srgb, var(--page) 92%, transparent); backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+    }
+    .sect { scroll-margin-top: calc(var(--topbar-h) + 44px + var(--sp-4)); }
+  }
+  @media (max-width: 820px) {
+    .jump .chip { height: 36px; padding: 0 var(--sp-3); }
+    .jump__scroll { gap: var(--sp-1); margin-right: calc(var(--gutter) * -1); }
+    .seg--block .seg__btn { height: 44px; min-height: 44px; }
+
+    /* yt-dlp meta: info sentence on its own line, size + checked on the next, no leading separator */
+    .meta--ver { flex-direction: column; align-items: flex-start; }
+    .meta--ver .ver { align-items: flex-start; }
+    .meta--ver .ver .icon { margin-top: 1px; }
+    .meta--ver .ver + .ver-meta::before { content: none; }
+    .meta--ver .ver-meta { padding-left: calc(16px + var(--sp-2)); }
+
+    /* yt-dlp up-to-date variant: badge sits after the title, only "Check now" in the control column */
+    .srow--uptodate { flex-wrap: wrap; padding: var(--sp-4) 0; gap: var(--sp-3); }
+    .srow--uptodate .srow__main { flex: 1 1 100%; }
+    .srow--uptodate .title-badge { display: flex; width: max-content; margin: var(--sp-1) 0 var(--sp-1); }
+    .srow--uptodate .srow__ctl { flex: 1 1 100%; }
+    .srow--uptodate .btn--check { flex: 1; height: 44px; min-height: 44px; }
+
+    /* About: badge below the title, toolchain versions on their own line */
+    .about__ver { display: block; }
+    .about__badge-inline { display: flex; margin: var(--sp-1) 0; }
+    .about__badge-side { display: none; }
+
+    /* States: phone versions with full-width 44 px actions, and clearance for mini player + tab bar */
+    .page { padding-bottom: calc(var(--mini-h) + var(--tabbar-h) + var(--sp-4) + var(--safe-bottom, 0px)); }
+    .states .banner .btn { flex: 1 1 100%; margin-left: 0; min-height: 44px; justify-content: center; }
+    .states .empty__actions { width: 100%; }
+    .states .empty__actions .btn { flex: 1 1 100%; min-height: 44px; justify-content: center; }
+    .stat--split { padding-left: 0; border-left: 0; }
+    .sect .card, .states .card:not(.card--flush) { padding: 0 var(--sp-4); }
+    .srow__ctl .select { width: 160px; }
+    .themes { gap: var(--sp-2); }
+    .theme-opt__preview { height: 56px; }
+    .theme-opt { min-height: 44px; }
+    .settings__body { gap: var(--sp-6); }
+    .sect .card > .card__foot .btn { flex: 1 1 auto; }
+    .legend { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2) var(--sp-4); }
+    /* Phone: the three app stats in one row, device free space full-width below a divider */
+    .usage-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4) var(--sp-3); }
+    .usage-stats .stat { min-width: 0; }
+    .usage-stats .stat__num { font-size: var(--fs-20); }
+    .usage-stats .stat--split { grid-column: 1 / -1; margin-left: 0; padding-top: var(--sp-3); border-top: 1px solid var(--border); flex-direction: row; align-items: baseline; gap: var(--sp-2); }
+    .srow--wrap { flex-wrap: wrap; }
+    .srow--block > .between:has(.btn--primary) { flex-wrap: wrap; }
+    .srow--block > .between:has(.btn--primary) .srow__ctl { flex: 1 1 100%; }
+    .srow--block > .between:has(.btn--primary) .srow__ctl .btn { flex: 1; min-height: 44px; }
+    .srow--wrap .srow__ctl { flex: 1 1 100%; justify-content: flex-start; padding-bottom: var(--sp-2); }
+    .srow--wrap .srow__ctl .select { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4h3v16H4zM10 4h3v16h-3zM15.5 5.2l2.9-.8 4.1 14.7-2.9.8z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M5.5 4h4.5v16H5.5zM14 4h4.5v16H14z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 6l-10 6 10 6zM5 6v12"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 6l10 6-10 6zM19 6v12"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M3 6h12M3 12h12M3 18h8M18 6v10"/><circle cx="16" cy="16.5" r="2.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-speed" viewBox="0 0 24 24"><path d="M3 17a9 9 0 1 1 18 0M12 14l4-5"/><circle cx="12" cy="14" r="1.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-storage" viewBox="0 0 24 24"><path d="M4 14h16v6H4zM4 14l2.5-8h11L20 14M8 17h.01"/></symbol>
+  <symbol id="i-playlist" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h7M19 9v9M16 13h6"/></symbol>
+  <symbol id="i-spotify" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M6 9.3c4.2-1.2 8.4-.9 12 1.1M7 12.6c3.4-.9 6.8-.6 9.8 1M8 15.6c2.6-.6 5.2-.4 7.6.8"/></symbol>
+  <symbol id="i-ytm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="5.5"/><path d="M10.5 9.5v5l4.2-2.5z"/></symbol>
+  <symbol id="i-sc" viewBox="0 0 24 24"><path d="M3 15v3M6 12v6M9 10v8M12 7v11M14 18h4.5a3.5 3.5 0 0 0 .5-7 5 5 0 0 0-5-4.5V18"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M19 7h1M4 17h3M13 17h7"/><circle cx="16" cy="7" r="2.5"/><circle cx="10" cy="17" r="2.5"/></symbol>
+
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M2 12h2M6 8v8M10 5v14M14 8v8M18 10v4M22 12h0"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="M22.6 16.6A5 5 0 0 0 18 9h-1.3A8 8 0 0 0 5 6.3M3 3l18 18M7 17h11M3.2 12.8A5 5 0 0 0 7 19"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-cell" viewBox="0 0 24 24"><path d="M4 20v-3M9 20v-6M14 20v-9M19 20V5"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 21V9M7 14l5-5 5 5M4 4h16"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-import" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></symbol>
+</svg>
+
+<div class="app">
+
+  <!-- ================================================================ SIDEBAR (desktop) -->
+  <aside class="sidebar">
+    <div class="sidebar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span>Offline Player</div>
+    <nav class="sidebar__section" aria-label="Primary">
+      <a class="nav-item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+      <a class="nav-item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+      <a class="nav-item" href="library.html"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+      <a class="nav-item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="nav-item__count">3</span></a>
+      <a class="nav-item" href="voice.html"><svg class="icon"><use href="#i-mic"/></svg>Voice recordings<span class="nav-item__count">18</span></a>
+    </nav>
+    <div class="sidebar__section">
+      <div class="eyebrow sidebar__label">Playlists</div>
+      <a class="nav-item nav-item--playlist" href="library.html"><svg class="icon icon--16"><use href="#i-heart"/></svg>Liked songs</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Late drives</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Focus — no vocals</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Gym 2026</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html#create"><svg class="icon icon--16"><use href="#i-plus"/></svg>New playlist</a>
+    </div>
+    <div class="sidebar__section sidebar__foot">
+      <a class="nav-item is-active" href="settings.html" aria-current="page"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+    </div>
+  </aside>
+
+  <!-- ================================================================ MAIN -->
+  <div class="main">
+    <header class="topbar">
+      <a class="btn btn--icon topbar__back phone-only" href="home.html" aria-label="Back"><svg class="icon"><use href="#i-chevron-left"/></svg></a>
+      <div class="topbar__title phone-only">Settings</div>
+      <div class="search desktop-only"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" placeholder="Search YouTube Music and your library" aria-label="Search"><span class="search__kbd">Ctrl K</span></div>
+      <a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a>
+    </header>
+
+    <div class="page">
+      <div class="page-head desktop-only">
+        <div><h1>Settings</h1><div class="page-head__sub">Offline Player 2.1.0 · no account, no sync — everything stays on this device.</div></div>
+      </div>
+
+      <div class="settings">
+        <!-- Section jump list (desktop ≥1024) -->
+        <nav class="settings__nav" aria-label="Settings sections">
+          <a class="nav-item is-active" href="#appearance"><svg class="icon"><use href="#i-sun"/></svg>Appearance</a>
+          <a class="nav-item" href="#playback"><svg class="icon"><use href="#i-speed"/></svg>Playback</a>
+          <a class="nav-item" href="#streaming"><svg class="icon"><use href="#i-stream"/></svg>Streaming</a>
+          <a class="nav-item" href="#downloads"><svg class="icon"><use href="#i-download"/></svg>Downloads</a>
+          <a class="nav-item" href="#import"><svg class="icon"><use href="#i-import"/></svg>Import</a>
+          <a class="nav-item" href="#device"><svg class="icon"><use href="#i-folder"/></svg>Device folders</a>
+          <a class="nav-item" href="#about"><svg class="icon"><use href="#i-info"/></svg>About</a>
+        </nav>
+
+        <div class="settings__body">
+
+          <!-- Section jump chips (phone / narrow): same seven sections as the desktop sub-nav -->
+          <nav class="jump" aria-label="Settings sections"><div class="jump__scroll chips--scroll">
+            <a class="jump__item" href="#appearance" aria-current="true"><span class="chip is-selected">Appearance</span></a>
+            <a class="jump__item" href="#playback"><span class="chip">Playback</span></a>
+            <a class="jump__item" href="#streaming"><span class="chip">Streaming</span></a>
+            <a class="jump__item" href="#downloads"><span class="chip">Downloads</span></a>
+            <a class="jump__item" href="#import"><span class="chip">Import</span></a>
+            <a class="jump__item" href="#device"><span class="chip">Device folders</span></a>
+            <a class="jump__item" href="#about"><span class="chip">About</span></a>
+          </div></nav>
+
+          <!-- ---------------------------------------------------------- APPEARANCE -->
+          <section class="sect" id="appearance">
+            <div class="section-head"><h3>Appearance</h3></div>
+            <div class="card">
+              <div class="srow srow--block">
+                <div class="between"><div class="srow__main"><div class="srow__title">Theme</div><div class="srow__sub">Light is the default. System follows your device.</div></div></div>
+                <div class="themes" role="radiogroup" aria-label="Theme">
+                  <button class="theme-opt theme-opt--light" role="radio" aria-checked="true" data-theme-opt="light">
+                    <span class="theme-opt__preview" data-invert-when="dark"><i class="theme-opt__side"></i><span class="theme-opt__main"><i></i><i></i><i></i></span></span>
+                    <span class="theme-opt__label">Light<svg class="icon"><use href="#i-check"/></svg></span>
+                  </button>
+                  <button class="theme-opt theme-opt--dark" role="radio" aria-checked="false" data-theme-opt="dark">
+                    <span class="theme-opt__preview is-inverted" data-invert-when="light"><i class="theme-opt__side"></i><span class="theme-opt__main"><i></i><i></i><i></i></span></span>
+                    <span class="theme-opt__label">Dark<svg class="icon"><use href="#i-check"/></svg></span>
+                  </button>
+                  <button class="theme-opt theme-opt--system" role="radio" aria-checked="false" data-theme-opt="system">
+                    <span class="theme-opt__preview"><i class="theme-opt__side"></i><span class="theme-opt__main" data-invert-when="dark"><i></i><i></i><i></i></span><span class="theme-opt__main is-inverted" data-invert-when="light"><i></i><i></i><i></i></span></span>
+                    <span class="theme-opt__label">System<svg class="icon"><use href="#i-check"/></svg></span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ---------------------------------------------------------- PLAYBACK -->
+          <section class="sect" id="playback">
+            <div class="section-head"><h3>Playback</h3></div>
+            <div class="card">
+              <div class="srow">
+                <div class="srow__main"><div class="srow__title">Gapless playback</div><div class="srow__sub">No silence between tracks on live albums and DJ mixes.</div></div>
+                <label class="toggle" aria-label="Gapless playback"><input type="checkbox" checked><span class="toggle__track"></span></label>
+              </div>
+              <div class="srow">
+                <div class="srow__main"><div class="srow__title">Crossfade</div><div class="srow__sub">Off · blends the end of a song into the next; choose a length when on. Never applied to voice recordings.</div></div>
+                <label class="toggle" aria-label="Crossfade"><input type="checkbox"><span class="toggle__track"></span></label>
+              </div>
+              <div class="srow srow--wrap is-disabled" aria-disabled="true">
+                <div class="srow__main"><div class="srow__title">Crossfade length</div><div class="srow__sub">Turn on Crossfade above to choose 2–12 s</div></div>
+                <div class="srow__ctl"><select class="select" aria-label="Crossfade length" aria-disabled="true" disabled><option>2 s</option><option>4 s</option><option selected>6 s</option><option>8 s</option><option>10 s</option><option>12 s</option></select></div>
+              </div>
+              <div class="srow srow--block">
+                <div class="between">
+                  <div class="srow__main"><div class="srow__title">Default speed for voice recordings</div><div class="srow__sub">Music always plays at 1×. Per-recording speed overrides this.</div></div>
+                </div>
+                <div class="seg seg--block" role="group" aria-label="Default voice speed">
+                  <button class="seg__btn" aria-pressed="false">0.75×</button>
+                  <button class="seg__btn" aria-pressed="false">1×</button>
+                  <button class="seg__btn" aria-pressed="false">1.25×</button>
+                  <button class="seg__btn is-active" aria-pressed="true">1.5×</button>
+                  <button class="seg__btn" aria-pressed="false">2×</button>
+                </div>
+              </div>
+              <div class="srow">
+                <div class="srow__main"><div class="srow__title">Sleep timer fades out</div><div class="srow__sub">Lowers the volume over the final 30 s instead of stopping abruptly.</div></div>
+                <label class="toggle" aria-label="Sleep timer fades out"><input type="checkbox" checked><span class="toggle__track"></span></label>
+              </div>
+            </div>
+          </section>
+
+          <!-- ---------------------------------------------------------- STREAMING -->
+          <section class="sect" id="streaming">
+            <div class="section-head"><h3>Streaming</h3><span class="section-head__sub">YouTube Music songs you play without downloading</span></div>
+            <div class="card">
+              <div class="srow srow--wrap">
+                <div class="srow__main"><div class="srow__title">Streaming quality</div><div class="srow__sub">Auto picks the best quality your connection holds without buffering.</div></div>
+                <div class="srow__ctl"><select class="select" aria-label="Streaming quality"><option selected>Auto · up to 256 kbps</option><option>High · 256 kbps</option><option>Normal · 128 kbps</option><option>Data saver · 48 kbps</option></select></div>
+              </div>
+              <div class="srow srow--block">
+                <div class="between">
+                  <div class="srow__main"><div class="srow__title">Stream cache</div><div class="srow__sub">Streamed audio is held in chunks while a song plays, then cleared. Nothing streamed is kept.</div></div>
+                  <div class="srow__ctl"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-trash"/></svg>Clear cache</button></div>
+                </div>
+                <div class="progress-line cache-meter">
+                  <div class="progress-line__meta"><span><strong>182 MB</strong> used · 3 songs buffered</span><span>limit 512 MB</span></div>
+                  <div class="progress" style="--p:36%" role="img" aria-label="Stream cache 182 of 512 megabytes, 36 percent"><i></i></div>
+                </div>
+              </div>
+              <div class="srow srow--wrap">
+                <div class="srow__main"><div class="srow__title">Cache limit</div><div class="srow__sub">Oldest chunks are dropped first when the limit is reached.</div></div>
+                <div class="srow__ctl"><select class="select" aria-label="Cache limit"><option>256 MB</option><option selected>512 MB</option><option>1 GB</option><option>2 GB</option></select></div>
+              </div>
+              <div class="srow">
+                <span class="srow-tile"><svg class="icon"><use href="#i-cell"/></svg></span>
+                <div class="srow__main"><div class="srow__title">Download over mobile data</div><div class="srow__sub">Off · downloads wait for Wi‑Fi. Streaming on mobile data uses Data saver quality.</div></div>
+                <label class="toggle" aria-label="Download over mobile data"><input type="checkbox"><span class="toggle__track"></span></label>
+              </div>
+            </div>
+          </section>
+
+          <!-- ---------------------------------------------------------- DOWNLOADS -->
+          <section class="sect" id="downloads">
+            <div class="section-head"><h3>Downloads</h3><span class="section-head__sub num">41.6 GB free of 128 GB</span></div>
+            <div class="card">
+              <div class="srow srow--wrap">
+                <div class="srow__main"><div class="srow__title">Download quality</div><div class="srow__sub">Applies to new downloads. Higher quality uses more storage (~9 MB per song at Best).</div></div>
+                <div class="srow__ctl"><select class="select" aria-label="Download quality"><option selected>Best available (Opus / M4A)</option><option>High · MP3 320 kbps</option><option>Standard · MP3 192 kbps</option><option>Small · MP3 128 kbps</option></select></div>
+              </div>
+              <div class="srow srow--block">
+                <div class="between">
+                  <div class="srow__main">
+                    <div class="srow__title">Download location</div>
+                    <div class="srow__sub">Downloaded songs, artwork and the library database live here.</div>
+                  </div>
+                  <div class="srow__ctl">
+                    <button class="btn btn--ghost btn--sm desktop-only"><svg class="icon icon--16"><use href="#i-external"/></svg>Open</button>
+                    <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-folder"/></svg>Change</button>
+                  </div>
+                </div>
+                <div class="path desktop-only" title="/home/yash/Music/Offline Player"><span class="path__head">/home/yash/Music/</span><span class="path__tail">Offline Player</span></div>
+                <div class="path phone-only" title="Internal storage › Music › Offline Player"><span class="path__head">Internal storage › Music › </span><span class="path__tail">Offline Player</span></div>
+              </div>
+              <div class="srow srow--wrap">
+                <div class="srow__main"><div class="srow__title">Downloads at a time</div><div class="srow__sub">More is faster on Wi‑Fi; fewer is kinder to the connection.</div></div>
+                <div class="srow__ctl"><select class="select" aria-label="Parallel downloads"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></div>
+              </div>
+              <div class="srow">
+                <div class="srow__main"><div class="srow__title">Embed artwork and tags</div><div class="srow__sub">Writes title, artist, album and cover into each file.</div></div>
+                <label class="toggle" aria-label="Embed artwork and tags"><input type="checkbox" checked><span class="toggle__track"></span></label>
+              </div>
+              <div class="srow srow--block">
+                <div class="between">
+                  <div class="srow__main"><div class="srow__title">Offline Player uses 4.62 GB</div><div class="srow__sub num">Measured 2 min ago · 1,266 files</div></div>
+                  <button class="btn btn--icon btn--ghost btn--sm" aria-label="Measure again"><svg class="icon icon--16"><use href="#i-refresh"/></svg></button>
+                </div>
+                <div class="usage-stats">
+                  <div class="stat"><div class="stat__num">4.02<span class="t-14 muted"> GB</span></div><div class="stat__label num">412 downloads</div></div>
+                  <div class="stat"><div class="stat__num">318<span class="t-14 muted"> MB</span></div><div class="stat__label num">18 recordings</div></div>
+                  <div class="stat"><div class="stat__num">182<span class="t-14 muted"> MB</span></div><div class="stat__label">Stream cache</div></div>
+                  <div class="stat"><div class="stat__num">96<span class="t-14 muted"> MB</span></div><div class="stat__label">Artwork</div></div>
+                  <div class="stat stat--split"><div class="stat__num">41.6<span class="t-14 muted"> GB</span></div><div class="stat__label num">Free · of 128 GB</div></div>
+                </div>
+                <div class="usage" role="img" aria-label="Offline Player's 4.62 GB: downloads 87%, voice recordings 7%, stream cache 4%, artwork 2%">
+                  <i class="usage__music" style="--w:87%"></i><i class="usage__voice" style="--w:6.9%"></i><i class="usage__cache" style="--w:3.9%"></i><i class="usage__art" style="--w:2.1%"></i>
+                </div>
+                <div class="legend">
+                  <span class="legend__item"><i class="legend__dot legend__dot--music"></i><strong>87%</strong> Downloads</span>
+                  <span class="legend__item"><i class="legend__dot legend__dot--voice"></i><strong>7%</strong> Voice recordings</span>
+                  <span class="legend__item"><i class="legend__dot legend__dot--cache"></i><strong>4%</strong> Stream cache</span>
+                  <span class="legend__item"><i class="legend__dot legend__dot--art"></i><strong>2%</strong> Artwork</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ---------------------------------------------------------- IMPORT FROM OTHER APPS -->
+          <section class="sect" id="import">
+            <div class="section-head"><h3>Import from other apps</h3></div>
+            <div class="card">
+              <div class="srow srow--block">
+                <div class="srow__main"><div class="srow__title">Bring your songs and playlists over</div><div class="srow__sub">Pick where they are now. Each song is matched on YouTube Music and saved as a playlist in your Library — stream it, or download it to keep.</div></div>
+                <div class="platforms">
+                  <button class="card card--interactive platform" type="button" aria-label="Import from Spotify">
+                    <span class="src-mark src-mark--spotify"><svg class="icon"><use href="#i-spotify"/></svg></span>
+                    <span class="source-card__body"><span class="source-card__title" style="display:block">Spotify</span><span class="source-card__sub" style="display:block">Public playlist link, or your data export (.zip)</span></span>
+                    <span class="platform__go"><span>Choose</span><svg class="icon icon--16"><use href="#i-chevron-right"/></svg></span>
+                  </button>
+                  <button class="card card--interactive platform" type="button" aria-label="Import from YouTube Music">
+                    <span class="src-mark src-mark--ytm"><svg class="icon"><use href="#i-ytm"/></svg></span>
+                    <span class="source-card__body"><span class="source-card__title" style="display:block">YouTube Music</span><span class="source-card__sub" style="display:block">Playlist or album link</span></span>
+                    <span class="platform__go"><span>Choose</span><svg class="icon icon--16"><use href="#i-chevron-right"/></svg></span>
+                  </button>
+                  <button class="card card--interactive platform" type="button" aria-label="Import from SoundCloud">
+                    <span class="src-mark src-mark--sc"><svg class="icon"><use href="#i-sc"/></svg></span>
+                    <span class="source-card__body"><span class="source-card__title" style="display:block">SoundCloud</span><span class="source-card__sub" style="display:block">Playlist (set), likes or profile link</span></span>
+                    <span class="platform__go"><span>Choose</span><svg class="icon icon--16"><use href="#i-chevron-right"/></svg></span>
+                  </button>
+                </div>
+              </div>
+              <div class="srow srow--block imports">
+                <div class="between"><div class="srow__title">Past imports</div><span class="srow__value">3 playlists · 141 songs</span></div>
+                <div class="list">
+                  <div class="drow">
+                    <span class="src-mark src-mark--spotify"><svg class="icon icon--16"><use href="#i-spotify"/></svg></span>
+                    <div class="drow__main"><div class="drow__title">Late drives</div><div class="drow__meta"><span>Spotify</span><span class="sep"></span><span>46 of 48 songs</span><span class="sep"></span><span>12 Oct</span><span class="badge badge--danger">2 not found</span></div></div>
+                    <div class="drow__actions"><button class="btn btn--ghost btn--sm">Fix 2</button><a class="btn btn--secondary btn--sm" href="playlist.html">Open</a></div>
+                  </div>
+                  <div class="drow">
+                    <span class="src-mark src-mark--sc"><svg class="icon icon--16"><use href="#i-sc"/></svg></span>
+                    <div class="drow__main"><div class="drow__title">Gym 2026</div><div class="drow__meta"><span>SoundCloud likes</span><span class="sep"></span><span>31 of 31 songs</span><span class="sep"></span><span>3 Oct</span></div></div>
+                    <div class="drow__actions"><a class="btn btn--secondary btn--sm" href="playlist.html">Open</a></div>
+                  </div>
+                  <div class="drow">
+                    <span class="src-mark src-mark--ytm"><svg class="icon icon--16"><use href="#i-ytm"/></svg></span>
+                    <div class="drow__main"><div class="drow__title">Focus — no vocals</div><div class="drow__meta"><span>YouTube Music</span><span class="sep"></span><span>64 of 64 songs</span><span class="sep"></span><span>28 Sep · during setup</span></div></div>
+                    <div class="drow__actions"><a class="btn btn--secondary btn--sm" href="playlist.html">Open</a></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ---------------------------------------------------------- DEVICE FOLDERS -->
+          <section class="sect" id="device">
+            <div class="section-head"><h3>Device folders</h3></div>
+            <div class="card">
+              <a class="srow srow--link" href="device.html">
+                <span class="srow-tile"><svg class="icon"><use href="#i-scan"/></svg></span>
+                <div class="srow__main"><div class="srow__title">Scan &amp; folders</div><div class="srow__sub num">Songs already on this device · 3 folders included, 1 excluded · last scan today 09:12</div></div>
+                <svg class="icon muted"><use href="#i-chevron-right"/></svg>
+              </a>
+            </div>
+          </section>
+
+          <!-- ---------------------------------------------------------- ABOUT -->
+          <section class="sect" id="about">
+            <div class="section-head"><h3>About</h3></div>
+            <div class="card">
+              <div class="srow srow--block">
+                <div class="between">
+                  <div class="srow__main">
+                    <div class="srow__title">yt-dlp <span class="badge badge--info title-badge">Update available</span></div>
+                    <div class="srow__sub num">Installed 2026.09.14 · searches, streams and downloads from YouTube Music</div>
+                  </div>
+                  <div class="srow__ctl"><button class="btn btn--primary btn--sm"><svg class="icon icon--16"><use href="#i-download"/></svg>Update to 2026.10.02</button></div>
+                </div>
+                <div class="meta meta--ver"><span class="ver"><svg class="icon icon--16"><use href="#i-info"/></svg>2026.10.02 fixes YouTube Music playlist matching</span><span class="ver-meta"><span>1.8 MB download</span><span>checked 14 min ago</span></span></div>
+              </div>
+              <div class="srow">
+                <div class="srow__main"><div class="srow__title">Update yt-dlp automatically</div><div class="srow__sub">Checks once a day while online. Streaming and downloads keep working on the installed version meanwhile.</div></div>
+                <label class="toggle" aria-label="Update yt-dlp automatically"><input type="checkbox" checked><span class="toggle__track"></span></label>
+              </div>
+              <div class="srow">
+                <span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span>
+                <div class="srow__main">
+                  <div class="srow__title">Offline Player</div>
+                  <div class="about__badge-inline"><span class="badge badge--ok badge--dot"><span class="badge__label">App up to date</span></span></div>
+                  <div class="srow__sub num">Version 2.1.0 (build 231) · <span class="desktop-only" style="display:inline">Linux x86_64</span><span class="phone-only" style="display:inline">Android 15</span><span class="desktop-only" style="display:inline"> · </span><span class="about__ver">yt-dlp 2026.09.14 · ffmpeg 7.1</span></div>
+                </div>
+                <span class="badge badge--ok badge--dot about__badge-side"><span class="badge__label">App up to date</span></span>
+              </div>
+              <a class="srow srow--link" href="#"><span class="srow-tile"><svg class="icon"><use href="#i-music"/></svg></span><div class="srow__main"><div class="srow__title">What’s new in 2.1</div><div class="srow__sub">Stream YouTube Music, lock-screen controls, import playlists from Spotify, YouTube Music and SoundCloud.</div></div><svg class="icon muted"><use href="#i-chevron-right"/></svg></a>
+              <a class="srow srow--link" href="#"><span class="srow-tile"><svg class="icon"><use href="#i-info"/></svg></span><div class="srow__main"><div class="srow__title">Open-source licences</div><div class="srow__sub">yt-dlp, ffmpeg, SQLite and 14 others.</div></div><svg class="icon muted"><use href="#i-chevron-right"/></svg></a>
+              <div class="srow desktop-only">
+                <div class="srow__main"><div class="srow__title">Reset settings</div><div class="srow__sub">Restores every option above to its default. Your library, downloads, imports and recordings are untouched.</div></div>
+                <div class="srow__ctl"><button class="btn btn--danger btn--sm"><svg class="icon icon--16"><use href="#i-refresh"/></svg>Reset settings</button></div>
+              </div>
+            </div>
+            <p class="help phone-only" style="margin-top:var(--sp-3)">Reset settings is in the ⋯ menu at the top.</p>
+          </section>
+
+          <!-- ---------------------------------------------------------- IMPORT FLOW (sub-page) -->
+          <section class="states" aria-label="Import flow" id="import-flow">
+            <div class="eyebrow">Import flow — sub-page opened by a platform tile above (step 1). Example: a Spotify playlist</div>
+
+            <div data-state="import-link">
+              <div class="states__label">Step 2 · Paste a link</div>
+              <div class="flow">
+                <div class="flow__bar">
+                  <button class="btn btn--icon btn--sm" aria-label="Back to Settings"><svg class="icon"><use href="#i-chevron-left"/></svg></button>
+                  <div class="grow"><div class="flow__title">Import from Spotify</div></div>
+                  <ol class="steps desktop-only" aria-label="Steps"><li class="steps__item is-done">Platform</li><li class="steps__sep"></li><li class="steps__item is-current">Link</li><li class="steps__sep"></li><li class="steps__item">Review matches</li><li class="steps__sep"></li><li class="steps__item">Import</li></ol>
+                </div>
+                <div class="flow__body">
+                  <ol class="steps phone-only" aria-label="Steps"><li class="steps__item is-done">Platform</li><li class="steps__sep"></li><li class="steps__item is-current">Link · step 2 of 4</li><li class="steps__sep"></li><li class="steps__item">Review</li><li class="steps__sep"></li><li class="steps__item">Import</li></ol>
+                  <div class="field">
+                    <label class="label" for="sp-link">Spotify playlist link</label>
+                    <div class="pastebox is-detected">
+                      <svg class="icon pastebox__icon"><use href="#i-link"/></svg>
+                      <input class="input" id="sp-link" value="https://open.spotify.com/playlist/3cEYpjA9oz9GiPac4AsH4n">
+                      <button class="btn btn--icon btn--sm" aria-label="Clear link"><svg class="icon icon--16"><use href="#i-x"/></svg></button>
+                    </div>
+                    <div class="help">In Spotify: open the playlist › ⋯ › Share › Copy link. The playlist must be public — no sign-in needed.</div>
+                  </div>
+                  <div class="found">
+                    <div class="art art--2 art--lg"><span>LD</span></div>
+                    <div class="grow"><div class="strong truncate">Late drives</div><div class="meta"><span>48 songs</span><span class="sep"></span><span>2 h 51 min</span><span class="sep"></span><span>by yash.m</span></div></div>
+                    <span class="badge badge--ok badge--dot"><span class="badge__label">Link found</span></span>
+                  </div>
+                  <div class="or">or</div>
+                  <div class="alt">
+                    <span class="src-mark src-mark--spotify"><svg class="icon"><use href="#i-upload"/></svg></span>
+                    <div class="grow"><div class="strong">Use your Spotify data export</div><div class="help">Brings every playlist and Liked Songs, including private ones. Request it at spotify.com › Account › Privacy; the .zip arrives by email.</div></div>
+                    <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-upload"/></svg>Choose .zip</button>
+                  </div>
+                </div>
+                <div class="flow__foot">
+                  <div class="help grow">Matching reads song titles only; nothing is downloaded yet.</div>
+                  <div class="flow__cta"><button class="btn btn--primary">Find 48 songs on YouTube Music<svg class="icon icon--16"><use href="#i-chevron-right"/></svg></button></div>
+                </div>
+              </div>
+            </div>
+
+            <div data-state="import-matching">
+              <div class="states__label">Step 3 · Matching in progress</div>
+              <div class="flow">
+                <div class="flow__bar">
+                  <button class="btn btn--icon btn--sm" aria-label="Back"><svg class="icon"><use href="#i-chevron-left"/></svg></button>
+                  <div class="grow"><div class="flow__title">Late drives</div></div>
+                  <button class="btn btn--ghost btn--sm">Cancel</button>
+                </div>
+                <div class="flow__body">
+                  <div class="progress-line">
+                    <div class="progress-line__meta"><span><strong>Matching 29 of 48 songs</strong></span><span>60% · ~20 s left</span></div>
+                    <div class="progress progress--thick" style="--p:60%"><i></i></div>
+                  </div>
+                  <div class="match-stats">
+                    <div class="match-stat stat stat--ok"><div class="stat__num num">25</div><div class="stat__label">Matched</div></div>
+                    <div class="match-stat stat stat--warn"><div class="stat__num num">3</div><div class="stat__label">Needs review</div></div>
+                    <div class="match-stat stat stat--danger"><div class="stat__num num">1</div><div class="stat__label">Not found</div></div>
+                  </div>
+                  <div class="mlist">
+                    <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title"></i><i class="skel skel--text w-40"></i></div><i class="skel skel--text w-100"></i></div>
+                    <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title"></i><i class="skel skel--text"></i></div><i class="skel skel--text w-100"></i></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div data-state="import-review">
+              <div class="states__label">Step 3 · Match preview (matched / needs review / not found) → Step 4 · Import as playlist</div>
+              <div class="flow">
+                <div class="flow__bar">
+                  <button class="btn btn--icon btn--sm" aria-label="Back"><svg class="icon"><use href="#i-chevron-left"/></svg></button>
+                  <div class="grow"><div class="flow__title">Late drives</div></div>
+                  <ol class="steps desktop-only" aria-label="Steps"><li class="steps__item is-done">Platform</li><li class="steps__sep"></li><li class="steps__item is-done">Link</li><li class="steps__sep"></li><li class="steps__item is-current">Review matches</li><li class="steps__sep"></li><li class="steps__item">Import</li></ol>
+                </div>
+                <div class="flow__body">
+                  <ol class="steps phone-only" aria-label="Steps"><li class="steps__item is-done">Platform</li><li class="steps__sep"></li><li class="steps__item is-done">Link</li><li class="steps__sep"></li><li class="steps__item is-current">Review · step 3 of 4</li><li class="steps__sep"></li><li class="steps__item">Import</li></ol>
+                  <div class="match-stats">
+                    <div class="match-stat stat stat--ok"><div class="stat__num num">41</div><div class="stat__label">Matched</div></div>
+                    <div class="match-stat stat stat--warn"><div class="stat__num num">5</div><div class="stat__label">Needs review</div></div>
+                    <div class="match-stat stat stat--danger"><div class="stat__num num">2</div><div class="stat__label">Not found</div></div>
+                  </div>
+                  <div class="mlist">
+                    <div class="group-head">Needs review <span class="group-head__count">5 · best guess is used unless you pick another</span></div>
+                    <div class="drow mrow--review">
+                      <div class="art art--5"><span>MC</span></div>
+                      <div class="drow__main"><div class="drow__title">Midnight City</div><div class="drow__meta"><span>M83</span><span class="sep"></span><span>4:03 on Spotify</span></div></div>
+                      <span class="badge badge--warn">Review</span>
+                      <div class="cands" role="radiogroup" aria-label="Pick a match for Midnight City">
+                        <label class="cand"><span class="check"><input type="radio" name="mc" checked></span><span class="cand__main truncate"><span class="strong">Midnight City</span> · M83 · Hurry Up, We’re Dreaming</span><span class="cand__dur">4:04</span></label>
+                        <label class="cand"><span class="check"><input type="radio" name="mc"></span><span class="cand__main truncate">Midnight City (Eric Prydz Private Remix) · M83</span><span class="cand__dur">7:12</span></label>
+                        <label class="cand"><span class="check"><input type="radio" name="mc"></span><span class="cand__main truncate">None of these — leave it out</span></label>
+                      </div>
+                    </div>
+                    <div class="drow">
+                      <div class="art art--3"><span>RL</span></div>
+                      <div class="drow__main"><div class="drow__title">Running Up That Hill</div><div class="drow__meta"><span>Kate Bush</span><span class="sep"></span><span>Best guess: 2018 Remaster · 5:03</span></div></div>
+                      <div class="drow__actions"><button class="btn btn--ghost btn--sm">Change</button></div>
+                    </div>
+                    <div class="more-link"><button class="btn btn--ghost btn--sm">Show 3 more to review</button></div>
+
+                    <div class="group-head">Not found <span class="group-head__count">2 · left out of the playlist</span></div>
+                    <div class="drow">
+                      <div class="art art--6"><span>OS</span></div>
+                      <div class="drow__main"><div class="drow__title">Ocean Sketch (demo)</div><div class="drow__meta"><span>Nils Arvid</span><span class="sep"></span><span>No match on YouTube Music</span></div></div>
+                      <div class="drow__actions"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-search"/></svg><span class="lbl">Search</span></button></div>
+                    </div>
+                    <div class="drow">
+                      <div class="art art--4"><span>TT</span></div>
+                      <div class="drow__main"><div class="drow__title">Tape Talk — Live at KEXP</div><div class="drow__meta"><span>Hollow Coves</span><span class="sep"></span><span>No match on YouTube Music</span></div></div>
+                      <div class="drow__actions"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-search"/></svg><span class="lbl">Search</span></button></div>
+                    </div>
+
+                    <div class="group-head">Matched <span class="group-head__count">41</span></div>
+                    <div class="drow">
+                      <div class="art art--1"><span>HW</span></div>
+                      <div class="drow__main"><div class="drow__title">Heat Waves</div><div class="drow__meta"><svg class="icon sg sg--dl" role="img" aria-label="Already downloaded"><use href="#i-check"/></svg><span>Glass Animals</span><span class="sep"></span><span>3:58</span><span class="sep"></span><span>already in your library</span></div></div>
+                      <span class="badge badge--ok">Matched</span>
+                    </div>
+                    <div class="drow">
+                      <div class="art art--2"><span>NO</span></div>
+                      <div class="drow__main"><div class="drow__title">Nightcall</div><div class="drow__meta"><span>Kavinsky</span><span class="sep"></span><span>4:18</span></div></div>
+                      <span class="badge badge--ok">Matched</span>
+                    </div>
+                    <div class="more-link"><button class="btn btn--ghost btn--sm">Show all 41 matched</button></div>
+                  </div>
+                </div>
+                <div class="flow__foot">
+                  <div class="field">
+                    <label class="label" for="pl-name">Save as playlist</label>
+                    <input class="input" id="pl-name" value="Late drives">
+                  </div>
+                  <label class="toggle"><input type="checkbox"><span class="toggle__track"></span><span class="toggle__label t-13">Download all 46 (≈ 410 MB)</span></label>
+                  <div class="flow__cta">
+                    <button class="btn btn--primary">Import 46 songs as playlist</button>
+                    <span class="help num">41 matched + 5 best guesses · 2 left out</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div data-state="import-done">
+              <div class="states__label">Step 4 · Imported</div>
+              <div class="flow">
+                <div class="flow__body">
+                  <div class="banner banner--ok"><svg class="icon"><use href="#i-check-circle"/></svg><div class="banner__body"><div class="banner__title">“Late drives” is in your Library · 46 songs</div><div class="banner__text">Songs stream from YouTube Music until you download them. 2 not-found songs are listed under Past imports › Fix.</div></div></div>
+                  <div class="cluster"><a class="btn btn--primary" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Open playlist</a><button class="btn btn--secondary">Import another</button><button class="btn btn--ghost">Back to Settings</button></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ---------------------------------------------------------- STATE VARIANTS -->
+          <section class="states" aria-label="State variants">
+            <div class="eyebrow">State variants — shown here for review, each replaces the matching row above</div>
+
+            <div data-state="import-empty">
+              <div class="states__label">Import · past imports empty (skipped during setup)</div>
+              <div class="card card--flush">
+                <div class="empty empty--compact">
+                  <div class="empty__icon"><svg class="icon"><use href="#i-import"/></svg></div>
+                  <div class="empty__title">No imports yet</div>
+                  <div class="empty__text">Bring playlists from another app — they become regular playlists you can stream or download.</div>
+                  <div class="empty__actions">
+                    <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-spotify"/></svg>Spotify</button>
+                    <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-ytm"/></svg>YouTube Music</button>
+                    <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-sc"/></svg>SoundCloud</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div data-state="import-link-error">
+              <div class="states__label">Import · link error (private playlist)</div>
+              <div class="card">
+                <div class="srow srow--block">
+                  <div class="field">
+                    <label class="label" for="sp-err">Spotify playlist link</label>
+                    <div class="pastebox is-error"><svg class="icon pastebox__icon"><use href="#i-alert"/></svg><input class="input is-error" id="sp-err" value="https://open.spotify.com/playlist/6ndZp1aE0f2vR0Fq"><button class="btn btn--icon btn--sm" aria-label="Clear link"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+                    <div class="help help--error">This playlist is private. Make it public in Spotify (⋯ › Make public), or use your data export instead.</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div data-state="import-offline">
+              <div class="states__label">Import · offline</div>
+              <div class="banner banner--warn"><svg class="icon"><use href="#i-offline"/></svg><div class="banner__body"><div class="banner__title">Importing needs internet</div><div class="banner__text">Links are matched on YouTube Music. You can still choose a Spotify export .zip now — it is matched when you’re back online.</div></div><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-upload"/></svg>Choose .zip</button></div>
+            </div>
+
+            <div data-state="cache-clearing">
+              <div class="states__label">Stream cache · empty (after Clear cache)</div>
+              <div class="card">
+                <div class="srow srow--block">
+                  <div class="between">
+                    <div class="srow__main"><div class="srow__title">Stream cache</div><div class="srow__sub">Cleared just now. It refills only while a streamed song is playing.</div></div>
+                    <div class="srow__ctl"><button class="btn btn--secondary btn--sm" disabled><svg class="icon icon--16"><use href="#i-trash"/></svg>Clear cache</button></div>
+                  </div>
+                  <div class="progress-line cache-meter"><div class="progress-line__meta"><span><strong>0 MB</strong> used</span><span>limit 512 MB</span></div><div class="progress" style="--p:0%"><i></i></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div data-state="streaming-offline">
+              <div class="states__label">Streaming · offline</div>
+              <div class="banner banner--info"><svg class="icon"><use href="#i-offline"/></svg><div class="banner__body"><div class="banner__title">You’re offline — streaming is paused</div><div class="banner__text">412 downloaded songs and your device music still play. Quality and cache settings apply when you reconnect.</div></div></div>
+            </div>
+
+            <div data-state="storage-loading">
+              <div class="states__label">Storage usage · loading (measuring the app folder)</div>
+              <div class="card">
+                <div class="srow srow--block">
+                  <div class="between"><div class="srow__main"><div class="srow__title">Storage usage</div><div class="srow__sub num">Measuring 412 of 1,266 files · 33%</div></div><button class="btn btn--icon btn--ghost btn--sm is-loading" aria-label="Measuring 412 of 1,266 files, 33%"></button></div>
+                  <div class="usage-stats">
+                    <div class="stat"><i class="skel skel--num" style="width:72px"></i><i class="skel skel--text skel-gap" style="width:96px;max-width:100%"></i></div>
+                    <div class="stat"><i class="skel skel--num" style="width:60px"></i><i class="skel skel--text skel-gap" style="width:88px;max-width:100%"></i></div>
+                    <div class="stat"><i class="skel skel--num" style="width:52px"></i><i class="skel skel--text skel-gap" style="width:80px;max-width:100%"></i></div>
+                    <div class="stat"><i class="skel skel--num" style="width:48px"></i><i class="skel skel--text skel-gap" style="width:64px;max-width:100%"></i></div>
+                    <div class="stat stat--split"><div class="stat__num">41.6<span class="t-14 muted"> GB</span></div><div class="stat__label num">Free · of 128 GB</div></div>
+                  </div>
+                  <i class="skel skel--bar"></i>
+                </div>
+              </div>
+            </div>
+
+            <div data-state="ytdlp-updating">
+              <div class="states__label">yt-dlp · updating (progress with numbers)</div>
+              <div class="card">
+                <div class="srow srow--block">
+                  <div class="between">
+                    <div class="srow__main"><div class="srow__title">yt-dlp</div><div class="srow__sub num">Updating to 2026.10.02 · downloads and imports are paused until it finishes</div></div>
+                    <div class="srow__ctl"><button class="btn btn--secondary btn--sm">Cancel</button></div>
+                  </div>
+                  <div class="progress-line"><div class="progress-line__meta"><span><strong>1.2 of 1.8 MB</strong></span><span>68% · 640 KB/s · 1 s left</span></div><div class="progress" style="--p:68%"><i></i></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div data-state="ytdlp-error">
+              <div class="states__label">yt-dlp · update failed (error with retry)</div>
+              <div class="banner banner--danger"><svg class="icon"><use href="#i-alert"/></svg><div class="banner__body"><div class="banner__title">yt-dlp update failed — no connection</div><div class="banner__text">Still on 2026.09.14. Streaming and downloads keep working; the update will retry when you’re back online.</div></div><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-refresh"/></svg>Retry</button></div>
+            </div>
+
+            <div data-state="ytdlp-uptodate">
+              <div class="states__label">yt-dlp · up to date (no action)</div>
+              <div class="card">
+                <div class="srow srow--uptodate">
+                  <div class="srow__main"><div class="srow__title">yt-dlp <span class="badge badge--ok badge--dot title-badge"><span class="badge__label">Up to date</span></span></div><div class="srow__sub num">2026.10.02 · checked 2 min ago</div></div>
+                  <div class="srow__ctl srow__ctl--check"><button class="btn btn--secondary btn--sm btn--check"><svg class="icon icon--16"><use href="#i-refresh"/></svg>Check now</button></div>
+                </div>
+              </div>
+            </div>
+
+            <div data-state="folder-missing">
+              <div class="states__label">Download location · missing (SD card removed or folder deleted)</div>
+              <div class="banner banner--danger"><svg class="icon"><use href="#i-alert"/></svg><div class="banner__body"><div class="banner__title">Download location can’t be opened</div><div class="banner__text">“SD card › Offline Player” isn’t available. Downloaded songs can’t play and new downloads are paused until it is reconnected or a new folder is chosen. Streaming still works.</div></div><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-folder"/></svg>Choose folder</button></div>
+            </div>
+
+            <div data-state="folder-moving">
+              <div class="states__label">Download location · moving files (after “Change”)</div>
+              <div class="card">
+                <div class="srow srow--block">
+                  <div class="between">
+                    <div class="srow__main"><div class="srow__title">Moving downloads to the new folder</div><div class="srow__sub num">1,266 files · 4.62 GB · keep the app open</div></div>
+                    <div class="srow__ctl"><button class="btn btn--secondary btn--sm">Cancel</button></div>
+                  </div>
+                  <div class="progress-line"><div class="progress-line__meta"><span><strong>418 of 1,266 files</strong></span><span>33% · 1.52 GB · ~2 min left</span></div><div class="progress" style="--p:33%"><i></i></div></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div><!-- /settings__body -->
+      </div><!-- /settings -->
+    </div><!-- /page -->
+  </div><!-- /main -->
+
+  <!-- ================================================================ PLAYER BAR (desktop) -->
+  <footer class="player-bar">
+    <div class="player-bar__now">
+      <div class="art art--1"><span>HW</span></div>
+      <div class="player-bar__meta"><div class="player-bar__title truncate">Heat Waves</div><div class="player-bar__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · Dreamland</span></div></div>
+      <button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button>
+    </div>
+    <div class="player-bar__center">
+      <div class="transport">
+        <button class="btn btn--icon" aria-label="Shuffle off"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+        <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+        <button class="btn btn--play" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+        <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+        <button class="btn btn--icon" aria-label="Repeat off"><svg class="icon"><use href="#i-repeat"/></svg></button>
+      </div>
+      <div class="scrubber scrubber--inline" style="--p:36%;--b:100%">
+        <div class="scrubber__times"><span>1:24</span></div>
+        <div class="scrubber__track"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div>
+        <div class="scrubber__times"><span>-2:34</span></div>
+      </div>
+    </div>
+    <div class="player-bar__right">
+      <button class="btn btn--icon" aria-label="Queue"><svg class="icon"><use href="#i-queue"/></svg></button>
+      <button class="btn btn--icon" aria-label="Sleep timer"><svg class="icon"><use href="#i-moon"/></svg></button>
+      <div class="volume" style="--p:70%"><svg class="icon muted"><use href="#i-volume"/></svg><div class="volume__track"><i class="volume__fill"></i><i class="volume__thumb"></i></div></div>
+    </div>
+  </footer>
+
+  <!-- ================================================================ PHONE CHROME -->
+  <div class="mini-player">
+    <div class="mini-player__progress" style="--p:36%"><i></i></div>
+    <div class="art art--1"><span>HW</span></div>
+    <div class="mini-player__meta"><div class="mini-player__title truncate">Heat Waves</div><div class="mini-player__sub num"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · 1:24 / 3:58</span></div></div>
+    <button class="btn btn--icon" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+    <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+  </div>
+  <nav class="tabbar" aria-label="Primary">
+    <a class="tabbar__item is-active" href="home.html" aria-current="page"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+    <a class="tabbar__item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+    <a class="tabbar__item" href="library.html"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+    <a class="tabbar__item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="tab-count" aria-label="3 active downloads">3</span></a>
+  </nav>
+
+</div><!-- /app -->
+
+<script>
+// Reflect the rendered theme (?theme=dark) in the Theme picker so the mockup is self-consistent.
+(function(){
+  var t = document.documentElement.dataset.theme || 'light';
+  document.querySelectorAll('[data-theme-opt]').forEach(function(b){
+    var on = b.dataset.themeOpt === t;
+    b.classList.toggle('is-selected', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+  // A preview is "inverted" (uses the toast tokens) when it shows the theme opposite to the rendered one
+  document.querySelectorAll('[data-invert-when]').forEach(function(el){ el.classList.toggle('is-inverted', el.dataset.invertWhen === t); });
+
+  // Scroll-spy: highlight the current section in the desktop sub-nav and the phone jump chips
+  var main = document.querySelector('.main');
+  var ids = ['appearance','playback','streaming','downloads','import','device','about'];
+  function spy(){
+    var top = main.getBoundingClientRect().top + 140, cur = ids[0];
+    ids.forEach(function(id){ var el = document.getElementById(id); if (el && el.getBoundingClientRect().top <= top) cur = id; });
+    document.querySelectorAll('.settings__nav .nav-item').forEach(function(a){ a.classList.toggle('is-active', a.getAttribute('href') === '#' + cur); });
+    document.querySelectorAll('.jump__item').forEach(function(a){
+      var on = a.getAttribute('href') === '#' + cur;
+      a.querySelector('.chip').classList.toggle('is-selected', on);
+      if (on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current');
+      // Keep the active chip clear of the right-edge fade on phone
+      var row = a.parentNode;
+      if (on && row.scrollWidth > row.clientWidth) {
+        var x = a.offsetLeft - row.offsetLeft, r = x + a.offsetWidth + 32 - row.clientWidth;
+        if (r > row.scrollLeft) row.scrollLeft = r; else if (x < row.scrollLeft) row.scrollLeft = Math.max(0, x - 16);
+      }
+    });
+  }
+  if (main) main.addEventListener('scroll', spy, { passive: true });
+})();
+</script>
+</body>
+</html>

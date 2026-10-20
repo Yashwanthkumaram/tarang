@@ -1,0 +1,724 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Player — Search</title>
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<script>/* ?state=recent|loading|menu|menu-playlist|offline|empty|error renders that state INSIDE the real shell:
+   the .main page is swapped for the matching appendix page; menu states also open the popover (desktop) / bottom sheet (phone). */
+(function(){var s=new URLSearchParams(location.search).get('state');if(!s)return;document.documentElement.dataset.state=s;
+addEventListener('DOMContentLoaded',function(){
+  var main=document.querySelector('.app .main > .page'),src=document.querySelector('[data-state-page="'+s+'"]');
+  if(src&&main){var c=src.cloneNode(true);c.removeAttribute('data-state-page');main.replaceWith(c);}
+  var st=document.querySelector('[data-sheet="'+s+'"]');
+  if(st){var o=st.cloneNode(true);o.classList.add('sheet-stage--live');o.removeAttribute('data-sheet');document.body.appendChild(o);}
+  var m=document.querySelector('.app .main');if(m)m.scrollTop=0;window.scrollTo(0,0);
+});})()</script>
+<link rel="stylesheet" href="../system.css">
+<style>
+  /* ---- Search layout (tokens only; no new colours) ---- */
+  .search-head { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .search-head .search--lg { max-width: 720px; }
+  .search-head .meta strong { color: var(--text); }
+  .search--lg .search__input { padding-right: 52px; }
+  .scope { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+  .scope .chips { flex: 1 1 auto; min-width: 0; }
+  .scope-note { display: flex; align-items: center; gap: var(--sp-2); }
+  /* Where to search: YouTube Music (online) or Your library (always available). No other sources in v2.1. */
+  .source-seg { flex: none; }
+  .source-seg .seg__btn .icon { width: 16px; height: 16px; }
+  .source-seg .chip__count { font-size: var(--fs-12); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  /* Queued download: quiet pill, same 120px slot as Download / ring */
+  .btn-queued { color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .btn-queued .icon { color: var(--text-3); }
+
+  /* Downloaded = the done state of the same Download button (row badge is the check before the artist) */
+  .btn-dl.is-done { color: var(--text-2); }
+  .btn-dl.is-done .icon { color: var(--ok); }
+  /* Neutral badges: grey pill, only the icon carries meaning */
+  .badge--done .icon { color: var(--ok); }
+  .badge--device .icon { color: var(--text-2); }
+
+  /* One search bar on this screen: the topbar field is hidden on desktop; the download pill sits at the end of the main search row */
+  @media (min-width: 821px) { .topbar--search { display: none; } }
+  .search-row { display: flex; align-items: center; gap: var(--sp-4); min-width: 0; }
+  .search-row .search--lg { flex: 1 1 auto; min-width: 0; }
+  .search-row .dl-status { flex: none; margin-left: auto; }
+  .tab-count { position: absolute; top: 4px; left: calc(50% + 4px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: var(--r-pill); background: var(--accent); color: var(--on-accent); font-size: var(--fs-12); font-weight: var(--fw-semibold); line-height: 16px; text-align: center; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 2px var(--surface); }
+
+  /* Results overview: top result + songs side by side on wide desktop; artists + albums below on the same columns */
+  .results, .discog { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: var(--sp-6); align-items: start; }
+  .discog .group--albums { grid-column: 2; grid-row: 1; }
+  .discog .group--artists { grid-column: 1; grid-row: 1; }
+  .group { display: flex; flex-direction: column; min-width: 0; }
+  .group .section-head .btn { margin-left: auto; }
+  .group .section-head h3 { display: flex; align-items: baseline; }
+  .group .section-head { min-height: 32px; }
+
+  /* Top result card */
+  .top-card { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-5); }
+  .top-card__head { display: flex; align-items: center; gap: var(--sp-5); min-width: 0; }
+  .top-card__art { width: 120px; height: 120px; flex: none; font-size: var(--fs-36); box-shadow: var(--shadow-2); }
+  .top-card__id { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+  .top-card__title { font-size: var(--fs-28); font-weight: var(--fw-bold); letter-spacing: var(--track-title); line-height: var(--lh-tight); }
+  .top-card__actions { display: flex; gap: var(--sp-2); }
+  .top-card__actions .btn { flex: 1 1 auto; min-width: 0; }
+  .top-card__actions .btn--primary { flex: 0 0 136px; }
+  .top-card .progress-line { max-width: none; }
+  .lbl-short { display: none; }
+
+  /* Song result rows: art | title + sub | duration 56 | Play 32 | Download state 120 | Like 32 | More 32.
+     Fixed columns, every control always visible; hover only raises contrast. */
+  .row--result { position: relative; }
+  .row--result .row__actions { display: grid; grid-template-columns: var(--hit) 120px var(--hit) var(--hit); gap: var(--sp-1); align-items: center; }
+  .act { display: flex; align-items: center; justify-content: center; min-width: 0; }
+  .act--state { justify-content: flex-end; }
+  .row--result .row__actions .btn--icon { width: var(--hit); height: var(--hit); min-width: var(--hit); flex: none; }
+  .row--result .row__actions .row__play { background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); color: var(--text-2); opacity: 1; }
+  .row--result:hover .row__actions .row__play, .row--result.is-hover .row__actions .row__play, .row--result:focus-within .row__actions .row__play { color: var(--text); }
+  .row--result .row__actions .row__play:hover, .row--result .row__actions .row__play.is-hover { background: var(--surface-3); color: var(--text); }
+  .row--result .row__actions .row__menu { opacity: 1; }
+  .row--result:hover .row__actions .like, .row--result.is-hover .row__actions .like, .row--result:hover .row__actions .row__menu, .row--result.is-hover .row__actions .row__menu { color: var(--text-2); }
+  .row--result .row__actions .like.is-liked { color: var(--accent-text); }
+  .row__text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row--result .row__sub .row__text { flex: 1 1 auto; }
+  /* Phone-only inline "Downloaded" / "On device" badge at the start of the sub-line (desktop shows it in the state column) */
+  .sub-dl { display: none; font-style: normal; }
+
+  /* Desktop row menu popover (?state=menu): opens under the ⋯ of the target row; submenu to its left */
+  .menu-pop { display: none; position: absolute; top: calc(100% - 4px); right: var(--sp-2); z-index: 20; }
+  .menu-pop > .menu { width: 248px; position: relative; }
+  .menu-pop .menu--sub { position: absolute; top: 76px; right: calc(100% + var(--sp-1)); width: 248px; }
+  .menu-pop .menu__item .icon--chev { margin-left: auto; color: var(--text-3); }
+  html[data-state^="menu"] .row--target .menu-pop { display: block; }
+  html[data-state^="menu"] .row--target { background: var(--surface-2); }
+  html[data-state^="menu"] .row--target .row__menu { background: var(--surface-3); color: var(--text); }
+
+  /* Phone bottom sheets (row menu → Add to playlist). In the appendix they sit in a 390-wide stage; ?state=menu opens them live. */
+  .sheet-stage { position: relative; height: 720px; overflow: hidden; background: var(--page); }
+  .sheet-stage__bg { padding: var(--sp-4) var(--gutter); }
+  .sheet-stage .scrim { position: absolute; z-index: 2; padding: 0; }
+  .sheet-stage--live { position: fixed; inset: 0; height: auto; z-index: 60; background: transparent; }
+  .sheet-stage--live .sheet-stage__bg { display: none; }
+  .sheet { padding-bottom: calc(var(--sp-3) + var(--safe-bottom)); gap: var(--sp-2); }
+  .sheet__head { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: var(--sp-3); align-items: center; padding: var(--sp-1) var(--sp-1) var(--sp-3); border-bottom: 1px solid var(--border); }
+  .sheet__head .art { width: 48px; height: 48px; font-size: var(--fs-16); }
+  .sheet__head--back { grid-template-columns: 44px minmax(0, 1fr); padding-left: 0; }
+  .sheet .menu__item { padding: 0 var(--sp-2); font-size: var(--fs-16); }
+  .sheet .menu__item .icon { width: 20px; height: 20px; }
+  .sheet .menu__item--new { color: var(--accent-text); font-weight: var(--fw-semibold); }
+  .sheet .menu__item--new .icon { color: var(--accent-text); }
+  .sheet .menu__item .icon--chev { margin-left: auto; color: var(--text-3); }
+
+  /* Download ring: 36px ring, stroke 3, "62" at 12px with a smaller % (>= 3px clear of the stroke) */
+  .dl-ring { width: 40px; height: 40px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center; color: var(--text); }
+  .dl-ring:hover, .dl-ring.is-hover { background: var(--surface-2); }
+  .dl-ring .ring { width: 36px; height: 36px; grid-area: 1 / 1; }
+  .dl-ring .ring circle { stroke-width: 3; }
+  .dl-ring__label { grid-area: 1 / 1; font-size: var(--fs-12); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; line-height: 1; }
+  .dl-ring__label small { font-size: 0.75em; font-weight: var(--fw-medium); }
+
+  /* Playing row: equalizer icon, title in text colour */
+  .row.is-playing .row__title { color: var(--text); font-weight: var(--fw-semibold); }
+  .row__title .eq { width: 16px; height: 16px; margin-right: var(--sp-2); vertical-align: -2px; }
+  .row__title .eq i { width: 4px; }
+
+  /* Album tiles: 2-line title clamp; sub + badges bottom-aligned so every tile's footer lines up */
+  .album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--art-tile), 1fr)); gap: var(--sp-6) var(--sp-4); }
+  .album-grid .tile > * { flex-shrink: 0; }
+  .tile__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal; line-height: 20px; overflow-wrap: anywhere; }
+  .tile__foot { margin-top: auto; display: flex; flex-direction: column; gap: var(--sp-2); }
+  .tile__badges { display: flex; gap: var(--sp-1); flex-wrap: wrap; min-height: 20px; }
+
+  /* Artists: compact rows (64px round art + name + count) */
+  .artist-list { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .artist-row { display: grid; grid-template-columns: 64px minmax(0, 1fr) 20px; gap: var(--sp-4); align-items: center; padding: var(--sp-2); border-radius: var(--r-card); color: var(--text); text-align: left; width: 100%; }
+  .artist-row:hover, .artist-row.is-hover { background: var(--surface-2); text-decoration: none; }
+  .artist-row .art { width: 64px; height: 64px; font-size: var(--fs-20); }
+  .artist-row__name { font-weight: var(--fw-semibold); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .artist-row__sub { font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .artist-row > .icon { color: var(--text-3); }
+
+  /* Recent searches */
+  .recent { max-width: 720px; }
+  .row--recent { grid-template-columns: var(--art-row) minmax(0, 1fr) var(--hit); }
+  .recent-ic { width: var(--art-row); height: var(--art-row); border-radius: 50%; background: var(--surface-2); color: var(--text-2); display: grid; place-items: center; }
+  .recent-ic .icon { width: 18px; height: 18px; }
+  .row--recent .art--round { border-radius: 50%; }
+
+  /* Row menu demo */
+  .menu-demo { display: flex; align-items: flex-start; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
+  .menu-demo .menu__item .icon--chev { margin-left: auto; color: var(--text-3); }
+  .menu-demo .menu { width: 264px; }
+  .menu-demo .menu__item { white-space: nowrap; }
+  .menu__count { margin-left: auto; font-size: var(--fs-12); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .menu__item.is-liked .icon { color: var(--accent-text); fill: currentColor; }
+
+  /* Skeleton rows mirror the real row anatomy: art | text | duration | actions */
+  .skel-row--result { grid-template-columns: var(--art-row) minmax(0, 1fr) 56px calc(var(--hit) * 3 + 120px + var(--sp-1) * 3); }
+  .skel-row--result .skel-act { display: grid; grid-template-columns: var(--hit) 120px var(--hit) var(--hit); gap: var(--sp-1); align-items: center; }
+  .skel-row--result .skel--circle { width: 32px; height: 32px; border-radius: 50%; }
+  .skel-row--result .skel--btn { width: 104px; height: 32px; justify-self: end; border-radius: var(--r-pill); }
+  .skel-dur { width: 32px; justify-self: end; }
+  .top-card--skel .skel--art { width: 120px; height: 120px; }
+  .top-card--skel .top-card__id { flex: 1 1 auto; gap: var(--sp-3); }
+  .skel--pill { height: 40px; width: 100%; border-radius: var(--r-pill); }
+  .skel-badges { display: flex; gap: var(--sp-2); }
+  .skel-badges .skel { height: 20px; width: 56px; border-radius: var(--r-pill); }
+  .skel-w40 { width: 40%; } .skel-w70 { width: 70%; } .skel-w55 { width: 55%; } .skel-w80 { width: 80%; } .skel-w45 { width: 45%; } .skel-w60 { width: 60%; } .skel-w50 { width: 50%; } .skel-w30 { width: 30%; }
+  .skel-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-4); }
+  .skel-tile { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .skel-artist { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: var(--sp-4); align-items: center; padding: var(--sp-2); }
+  .skel-artist .skel--round { width: 64px; height: 64px; border-radius: 50%; }
+  .loading-line { display: flex; align-items: center; gap: var(--sp-3); }
+  .loading-line .progress { max-width: 240px; }
+
+  /* State variants (labelled, below the shell) */
+  .states { width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--sp-10) var(--gutter) var(--sp-16); display: flex; flex-direction: column; gap: var(--sp-8); }
+  .states__intro { display: flex; flex-direction: column; gap: var(--sp-1); padding-bottom: var(--sp-4); border-bottom: 1px solid var(--border); }
+  .state { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .state__label { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+  .state__label p { font-size: var(--fs-13); color: var(--text-2); }
+  .state__frame { border: 1px solid var(--border); border-radius: var(--r-card); background: var(--page); overflow: hidden; }
+  .state__frame .page { max-width: none; gap: var(--sp-6); }
+  .state-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-6); }
+
+  @media (min-width: 1280px) {
+    .discog .album-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .discog .album-grid .tile:nth-child(n+5) { display: none; }
+  }
+  @media (max-width: 1279px) {
+    .results, .discog { grid-template-columns: minmax(0, 1fr); }
+    .discog .group--albums, .discog .group--artists { grid-column: auto; grid-row: auto; }
+    .scope-note { display: none; }
+    .artist-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
+  }
+  @media (min-width: 821px) and (max-width: 1279px) {
+    .discog .album-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .discog .album-grid .tile:nth-child(n+6) { display: none; }
+    .top-card { display: grid; grid-template-columns: minmax(0, 1fr) minmax(240px, 320px); grid-template-rows: auto auto; column-gap: var(--sp-6); row-gap: var(--sp-3); align-items: center; }
+    .top-card__head { grid-row: 1 / 3; }
+    .top-card__art { width: 96px; height: 96px; }
+    .top-card .progress-line { align-self: end; }
+    .top-card__actions { align-self: start; }
+    .top-card__actions .lbl-long { display: none; }
+    .top-card__actions .lbl-short { display: inline; }
+  }
+
+  @media (max-width: 820px) {
+    .page { gap: var(--sp-6); }
+    .search-head .search--lg .search__input { height: 48px; }
+    .search--lg .search__input { padding-right: 52px; }
+    .scope .chips { margin-right: calc(var(--gutter) * -1); flex-basis: 100%; }
+    .source-seg { display: flex; width: 100%; }
+    .source-seg .seg__btn { flex: 1 1 0; justify-content: center; height: 44px; }
+    .search-head .chips--scroll { -webkit-mask-image: none; mask-image: none; }
+
+    .top-card { padding: var(--sp-4); gap: var(--sp-3); }
+    .top-card__head { gap: var(--sp-3); }
+    .top-card__art { width: 80px; height: 80px; font-size: var(--fs-28); }
+    .top-card__id { gap: var(--sp-1); }
+    .top-card__title { font-size: var(--fs-20); }
+    .top-card__actions .btn { height: 48px; flex: 1 1 0; }
+    .top-card__actions .lbl-long { display: none; }
+    .top-card__actions .lbl-short { display: inline; }
+    .group .section-head h3 { flex-direction: column; align-items: flex-start; gap: 2px; }
+    .meta__extra { display: none; }
+
+    /* Rows: art | artist-only sub | duration | ONE 44px action circle | 44px more */
+    .row--result { grid-template-columns: 44px minmax(0, 1fr) 32px auto; gap: var(--sp-2); }
+    .row--result .row__dur { display: block; }
+    .row--result .row__actions { display: flex; gap: var(--sp-2); }
+    .row--result .act--like { display: none; } /* Like lives in the ⋯ sheet on phone */
+    .row--result .act--play { display: none; }
+    .row--result.is-dl .act--play { display: flex; }
+    .row--result.is-dl .act--state { display: none; }
+    .sub-album { display: none; }
+    /* Downloaded / On device: inline badge first on the sub-line, same as Library */
+    .row--result .sub-dl { display: inline-flex; flex: none; }
+    .row--result .row__actions .row__play, .row--result .btn-dl { display: inline-flex; opacity: 1; width: 44px; height: 44px; padding: 0; border-radius: 50%; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border-strong); border: 0; color: var(--text); }
+    .row--result .btn-dl .btn-dl__label { display: none; }
+    .row--result .row__actions .dl-ring { width: 44px; height: 44px; }
+    .row--result .row__menu { opacity: 1; }
+    .row.is-playing .row__title::before { content: none; }
+
+    /* Touch has no hover: neutralise desktop .is-hover demos at phone width */
+    .row.is-hover, .tile.is-hover, .artist-row.is-hover { background: transparent; }
+    .chip.is-hover:not(.is-selected) { background: var(--surface); color: var(--text-2); }
+    .tile.is-hover .art__play { opacity: 0; }
+
+    .album-grid { display: flex; gap: var(--sp-3); overflow-x: auto; scrollbar-width: none; margin: 0 calc(var(--gutter) * -1); padding: var(--sp-2) var(--gutter); scroll-padding-inline: var(--gutter); }
+    .album-grid::-webkit-scrollbar { display: none; }
+    .album-grid .tile { width: var(--art-tile); flex: none; margin: 0; }
+    .artist-list { display: flex; }
+    .artist-row { grid-template-columns: 56px minmax(0, 1fr) 20px; gap: var(--sp-3); padding: var(--sp-2) var(--sp-1); }
+    .artist-row .art { width: 56px; height: 56px; }
+
+    .row--recent { grid-template-columns: 44px minmax(0, 1fr) 44px; }
+    .recent-ic { width: 44px; height: 44px; }
+
+    .skel-row--result { grid-template-columns: 44px minmax(0, 1fr) 32px 96px; height: 64px; padding: 0 var(--sp-1); gap: var(--sp-2); }
+    .skel-row--result .skel--art { width: 44px; height: 44px; }
+    .skel-row--result .skel-act { display: flex; gap: var(--sp-2); justify-content: flex-end; }
+    .skel-row--result .skel--circle { width: 44px; height: 44px; }
+    .skel-row--result .skel--btn, .skel-row--result .skel-act > :nth-child(3) { display: none; }
+    .search-row { gap: 0; }
+    .sheet-stage { margin: 0; }
+    .skel-dur { width: 28px; }
+    .top-card--skel .skel--art { width: 80px; height: 80px; }
+    .skel--pill { height: 48px; }
+    .skel-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .menu-demo { flex-direction: column; align-items: stretch; }
+    .menu-demo .menu { width: 100%; }
+
+    .states { padding: var(--sp-8) var(--gutter) var(--sp-12); gap: var(--sp-6); }
+    .loading-line { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+    .loading-line .progress { max-width: none; }
+    .state-pair { grid-template-columns: 1fr; }
+    .state__frame { margin: 0 calc(var(--gutter) * -1); border-radius: 0; border-left: 0; border-right: 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ Icon sprite (inline SVG, stroke 2) ============ -->
+<svg id="sprite" xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4h3v16H4zM10 4h3v16h-3zM15.5 5.2l2.9-.8 4.1 14.7-2.9.8z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 6l-10 6 10 6zM5 6v12"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 6l10 6-10 6zM19 6v12"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M3 6h12M3 12h12M3 18h8M18 6v10"/><circle cx="16" cy="16.5" r="2.5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="M22.6 16.6A5 5 0 0 0 18 9h-1.3A8 8 0 0 0 5 6.3M3 3l18 18M7 17h11M3.2 12.8A5 5 0 0 0 7 19"/></symbol>
+  <symbol id="i-playlist" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h7M19 9v9M16 13h6"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-ytm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="5.5"/><path d="M10.5 9.5v5l4.2-2.5z"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-play-next" viewBox="0 0 24 24"><path d="M3 6h11M3 12h7M3 18h7M14 12v8l6-4z"/></symbol>
+  <!-- Generated artwork overlays (white at low opacity over the token gradients) -->
+  <symbol id="g-orbs" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice"><circle cx="80" cy="18" r="36" fill="currentColor" opacity=".16"/><circle cx="8" cy="98" r="34" fill="currentColor" opacity=".10"/></symbol>
+  <symbol id="g-waves" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice"><path d="M0 66 Q25 48 50 66 T100 66 V100 H0z" fill="currentColor" opacity=".14"/><path d="M0 80 Q25 62 50 80 T100 80 V100 H0z" fill="currentColor" opacity=".12"/></symbol>
+  <symbol id="g-rings" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice"><g fill="none" stroke="currentColor" stroke-width="3" opacity=".18"><circle cx="50" cy="50" r="16"/><circle cx="50" cy="50" r="30"/><circle cx="50" cy="50" r="44"/></g></symbol>
+  <symbol id="g-bars" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice"><g fill="currentColor" opacity=".14"><rect x="8" y="58" width="10" height="42"/><rect x="24" y="40" width="10" height="60"/><rect x="40" y="66" width="10" height="34"/><rect x="56" y="30" width="10" height="70"/><rect x="72" y="50" width="10" height="50"/><rect x="88" y="62" width="10" height="38"/></g></symbol>
+
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M2 12h2M6 8v8M10 5v14M14 8v8M18 10v4M22 12h0"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+</svg>
+
+<!-- ================================================================ APP SHELL -->
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sidebar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span>Offline Player</div>
+    <nav class="sidebar__section" aria-label="Primary">
+      <a class="nav-item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+      <a class="nav-item is-active" href="search.html" aria-current="page"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+      <a class="nav-item" href="library.html"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+      <a class="nav-item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="nav-item__count">3</span></a>
+      <a class="nav-item" href="voice.html"><svg class="icon"><use href="#i-mic"/></svg>Voice recordings<span class="nav-item__count">18</span></a>
+    </nav>
+    <div class="sidebar__section">
+      <div class="eyebrow sidebar__label">Playlists</div>
+      <a class="nav-item nav-item--playlist" href="library.html"><svg class="icon icon--16"><use href="#i-heart"/></svg>Liked songs</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Late drives</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Focus — no vocals</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Gym 2026</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html#create"><svg class="icon icon--16"><use href="#i-plus"/></svg>New playlist</a>
+    </div>
+    <div class="sidebar__section sidebar__foot">
+      <a class="nav-item" href="settings.html"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar topbar--search">
+      <div class="topbar__title">Search</div>
+      <a class="btn btn--icon phone-only topbar__trail" href="settings.html" aria-label="Settings"><svg class="icon"><use href="#i-settings"/></svg></a>
+    </header>
+
+    <div class="page">
+
+      <!-- One search bar + result-type chips -->
+      <div class="search-head">
+        <div class="search-row">
+          <div class="search search--lg">
+            <svg class="icon"><use href="#i-search"/></svg>
+            <input class="search__input is-focus" value="fred again" placeholder="Songs, albums or artists" aria-label="Search YouTube Music and your library">
+            <button class="btn btn--icon search__clear" aria-label="Clear search"><svg class="icon icon--16"><use href="#i-x"/></svg></button>
+          </div>
+          <a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a>
+        </div>
+        <div class="scope">
+          <div class="seg source-seg" role="tablist" aria-label="Search in">
+            <button class="seg__btn is-active" role="tab" aria-selected="true"><svg class="icon"><use href="#i-ytm"/></svg>YouTube Music</button>
+            <button class="seg__btn" role="tab" aria-selected="false"><svg class="icon"><use href="#i-library"/></svg>Your library <span class="chip__count">4</span></button>
+          </div>
+          <div class="chips chips--scroll" role="tablist" aria-label="Show">
+            <button class="chip is-selected" role="tab" aria-selected="true">All</button>
+            <button class="chip is-hover" role="tab">Songs <span class="chip__count">24</span></button>
+            <button class="chip" role="tab">Albums <span class="chip__count">7</span></button>
+            <button class="chip" role="tab">Artists <span class="chip__count">3</span></button>
+          </div>
+          <div class="scope-note t-13 muted"><svg class="icon icon--16"><use href="#i-ytm"/></svg>Play streams it · Download keeps it offline</div>
+        </div>
+        <div class="meta"><span><strong class="strong">24 songs · 7 albums · 3 artists</strong> on YouTube Music</span><span class="sep meta__extra"></span><span class="meta__extra">2 downloaded · 4 in your library</span></div>
+      </div>
+
+      <!-- Top result + Songs -->
+      <div class="results">
+        <section class="group" aria-labelledby="h-top">
+          <div class="section-head"><h3 id="h-top">Top result</h3></div>
+          <div class="card top-card">
+            <div class="top-card__head">
+              <div class="art art--5 top-card__art"><svg><use href="#g-rings"/></svg><span>td</span></div>
+              <div class="top-card__id">
+                <div class="cluster"><span class="badge">Album</span></div>
+                <div class="top-card__title">ten days</div>
+                <div class="meta"><span>Fred again..</span><span class="sep"></span><span>2024</span><span class="sep"></span><span>13 songs</span><span class="sep meta__extra"></span><span class="meta__extra num">43:09</span></div>
+              </div>
+            </div>
+            <div class="progress-line">
+              <div class="progress-line__meta"><span><strong>1 of 13</strong> downloaded</span><span>12 to download · 98 MB</span></div>
+              <div class="progress" style="--p:8%"><i></i></div>
+            </div>
+            <div class="top-card__actions">
+              <button class="btn btn--primary"><svg class="icon icon--fill"><use href="#i-play"/></svg>Play</button>
+              <button class="btn btn--secondary"><svg class="icon"><use href="#i-download"/></svg><span class="lbl-long">Download 12 songs · 98 MB</span><span class="lbl-short">Download</span></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="group" aria-labelledby="h-songs">
+          <div class="section-head"><h3 id="h-songs">Songs<span class="section-head__sub num">24 results</span></h3><button class="btn btn--ghost btn--sm">Show all</button></div>
+          <div class="list">
+            <div class="row row--result is-dl"><div class="art art--1"><svg><use href="#g-orbs"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Delilah (pull me out of this)</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__text">Fred again..<span class="sub-album"> · Actual Life 3</span></span></div></div><div class="row__dur">4:33</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Play Delilah, downloaded"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><button class="btn btn--secondary btn--sm btn-dl is-done" aria-label="Downloaded, plays offline. Remove download"><svg class="icon icon--16"><use href="#i-check"/></svg><span class="btn-dl__label">Downloaded</span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for Delilah"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+            <div class="row row--result is-dl"><div class="art art--5"><svg><use href="#g-rings"/></svg><span>td</span></div><div class="row__main"><div class="row__title">adore u</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__text">Fred again.., Obongjayar<span class="sub-album"> · ten days</span></span></div></div><div class="row__dur">3:57</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Play adore u, downloaded"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><button class="btn btn--secondary btn--sm btn-dl is-done" aria-label="Downloaded, plays offline. Remove download"><svg class="icon icon--16"><use href="#i-check"/></svg><span class="btn-dl__label">Downloaded</span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like" aria-label="Like adore u"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for adore u"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+            <div class="row row--result"><div class="art art--2"><svg><use href="#g-waves"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Marea (we’ve lost dancing)</div><div class="row__sub"><span class="row__text">Fred again.., The Blessed Madonna<span class="sub-album"> · Actual Life</span></span></div></div><div class="row__dur">4:48</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Stream Marea"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><button class="dl-ring" aria-label="Downloading Marea, 62 percent. Tap to pause"><svg class="ring" viewBox="0 0 36 36" aria-hidden="true"><circle class="ring__bg" cx="18" cy="18" r="15.5"/><circle class="ring__fg" cx="18" cy="18" r="15.5" pathLength="100" style="--p:62"/></svg><span class="dl-ring__label">62<small>%</small></span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like" aria-label="Like Marea"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for Marea"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+            <div class="row row--result is-hover"><div class="art art--1"><svg><use href="#g-orbs"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Jungle</div><div class="row__sub"><span class="row__text">Fred again..<span class="sub-album"> · Actual Life 3</span></span></div></div><div class="row__dur">3:15</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Stream Jungle"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><button class="btn btn--secondary btn--sm btn-dl" aria-label="Download Jungle"><svg class="icon icon--16"><use href="#i-download"/></svg><span class="btn-dl__label">Download</span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like" aria-label="Like Jungle"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for Jungle"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+            <div class="row row--result row--target"><div class="art art--5"><svg><use href="#g-rings"/></svg><span>td</span></div><div class="row__main"><div class="row__title">leavemealone</div><div class="row__sub"><span class="row__text">Fred again.., Baby Keem<span class="sub-album"> · ten days</span></span></div></div><div class="row__dur">3:21</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Stream leavemealone"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><button class="btn btn--secondary btn--sm btn-dl" aria-label="Download leavemealone"><svg class="icon icon--16"><use href="#i-download"/></svg><span class="btn-dl__label">Download</span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like" aria-label="Like leavemealone"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for leavemealone"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div><div class="menu-pop"><div class="menu" role="menu" aria-label="leavemealone">
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-play-next"/></svg>Play next</button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-queue"/></svg>Add to queue</button>
+<button class="menu__item is-hover" role="menuitem" aria-haspopup="menu" aria-expanded="true"><svg class="icon"><use href="#i-plus"/></svg>Add to playlist<svg class="icon icon--chev"><use href="#i-chevron-right"/></svg></button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-heart"/></svg>Like</button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-download"/></svg>Download<span class="menu__hint num">7.8 MB</span></button>
+<div class="menu__sep"></div>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-disc"/></svg>Go to album</button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-user"/></svg>Go to artist</button>
+<div class="menu menu--sub" role="menu" aria-label="Add to playlist">
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-plus"/></svg>New playlist…</button>
+<div class="menu__sep"></div>
+<button class="menu__item is-hover" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Late drives<span class="menu__count">42 songs</span></button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Focus — no vocals<span class="menu__count">87 songs</span></button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Gym 2026<span class="menu__count">23 songs</span></button>
+</div></div></div></div>
+            <div class="row row--result"><div class="art art--2"><svg><use href="#g-waves"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Danielle (smile on my face)</div><div class="row__sub"><span class="row__text">Fred again..<span class="sub-album"> · Actual Life</span></span></div></div><div class="row__dur">3:35</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Stream Danielle"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><button class="btn btn--ghost btn--sm btn-dl btn-queued" aria-label="Danielle is queued, 2nd in line. Tap to cancel"><svg class="icon icon--16"><use href="#i-clock"/></svg><span class="btn-dl__label">Queued · 2nd</span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like" aria-label="Like Danielle"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for Danielle"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Artists (left, under Top result) + Albums (right, under Songs) -->
+      <div class="discog">
+        <section class="group group--albums" aria-labelledby="h-albums">
+          <div class="section-head"><h3 id="h-albums">Albums<span class="section-head__sub num">7 results</span></h3><button class="btn btn--ghost btn--sm">Show all</button></div>
+          <div class="album-grid">
+            <button class="tile"><div class="art art--5"><svg><use href="#g-rings"/></svg><span>td</span></div><div class="tile__title">ten days</div><div class="tile__foot"><div class="tile__sub num">2024 · 13 songs</div><div class="tile__badges"><span class="badge badge--done num"><svg class="icon"><use href="#i-check"/></svg>1 / 13 downloaded</span></div></div></button>
+            <button class="tile"><div class="art art--1"><svg><use href="#g-orbs"/></svg><span>AL3</span><span class="art__play" aria-hidden="true"><svg class="icon"><use href="#i-play"/></svg></span></div><div class="tile__title">Actual Life 3 (January 1 – September 9 2022)</div><div class="tile__foot"><div class="tile__sub num">2022 · 13 songs</div><div class="tile__badges"><span class="badge badge--done num"><svg class="icon"><use href="#i-check"/></svg>1 / 13 downloaded</span></div></div></button>
+            <button class="tile"><div class="art art--6"><svg><use href="#g-bars"/></svg><span>SL</span></div><div class="tile__title">Secret Life</div><div class="tile__foot"><div class="tile__sub num">2023 · 10 songs</div><div class="tile__badges"></div></div></button>
+            <button class="tile"><div class="art art--3"><svg><use href="#g-waves"/></svg><span>AL2</span></div><div class="tile__title">Actual Life 2 (February 2 – October 15 2021)</div><div class="tile__foot"><div class="tile__sub num">2021 · 11 songs</div><div class="tile__badges"></div></div></button>
+            <button class="tile"><div class="art art--2"><svg><use href="#g-waves"/></svg><span>AL</span></div><div class="tile__title">Actual Life (April 14 – December 17 2020)</div><div class="tile__foot"><div class="tile__sub num">2021 · 13 songs</div><div class="tile__badges"></div></div></button>
+            <button class="tile"><div class="art art--4"><svg><use href="#g-orbs"/></svg><span>PB</span></div><div class="tile__title">Places to Be</div><div class="tile__foot"><div class="tile__sub num">2024 · Single · 3 songs</div><div class="tile__badges"></div></div></button>
+          </div>
+        </section>
+
+        <section class="group group--artists" aria-labelledby="h-artists">
+          <div class="section-head"><h3 id="h-artists">Artists<span class="section-head__sub num">3 results</span></h3></div>
+          <div class="artist-list">
+            <a class="artist-row is-hover" href="#"><div class="art art--round art--4"><svg><use href="#g-rings"/></svg><span>F</span></div><div><div class="artist-row__name">Fred again..</div><div class="artist-row__sub">Artist · 3 songs downloaded</div></div><svg class="icon"><use href="#i-chevron-right"/></svg></a>
+            <a class="artist-row" href="#"><div class="art art--round art--6"><svg><use href="#g-orbs"/></svg><span>FB</span></div><div><div class="artist-row__name">Fred again.. &amp; Brian Eno</div><div class="artist-row__sub">Artist · 1 album</div></div><svg class="icon"><use href="#i-chevron-right"/></svg></a>
+            <a class="artist-row" href="#"><div class="art art--round art--3"><svg><use href="#g-waves"/></svg><span>FT</span></div><div><div class="artist-row__name">Fred again.. &amp; Thomas Bangalter</div><div class="artist-row__sub">Artist · 1 single</div></div><svg class="icon"><use href="#i-chevron-right"/></svg></a>
+          </div>
+        </section>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Desktop player bar -->
+  <footer class="player-bar">
+    <div class="player-bar__now">
+      <div class="art art--1"><span>HW</span></div>
+      <div class="player-bar__meta"><div class="player-bar__title truncate">Heat Waves</div><div class="player-bar__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · Dreamland</span></div></div>
+      <button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button>
+    </div>
+    <div class="player-bar__center">
+      <div class="transport">
+        <button class="btn btn--icon" aria-label="Shuffle off"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+        <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+        <button class="btn btn--play" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+        <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+        <button class="btn btn--icon" aria-label="Repeat off"><svg class="icon"><use href="#i-repeat"/></svg></button>
+      </div>
+      <div class="scrubber scrubber--inline" style="--p:36%;--b:100%">
+        <div class="scrubber__times"><span>1:24</span></div>
+        <div class="scrubber__track"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div>
+        <div class="scrubber__times"><span>-2:34</span></div>
+      </div>
+    </div>
+    <div class="player-bar__right">
+      <button class="btn btn--icon" aria-label="Queue"><svg class="icon"><use href="#i-queue"/></svg></button>
+      <button class="btn btn--icon" aria-label="Sleep timer"><svg class="icon"><use href="#i-moon"/></svg></button>
+      <div class="volume" style="--p:70%"><svg class="icon muted"><use href="#i-volume"/></svg><div class="volume__track"><i class="volume__fill"></i><i class="volume__thumb"></i></div></div>
+    </div>
+  </footer>
+
+  <!-- Phone mini player + tab bar -->
+  <div class="mini-player" role="button" tabindex="0" aria-label="Open Now Playing">
+    <div class="mini-player__progress" style="--p:36%"><i></i></div>
+    <div class="art art--1"><span>HW</span></div>
+    <div class="mini-player__meta"><div class="mini-player__title truncate">Heat Waves</div><div class="mini-player__sub num"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · 1:24 / 3:58</span></div></div>
+    <button class="btn btn--icon" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+    <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+  </div>
+  <nav class="tabbar" aria-label="Primary">
+    <a class="tabbar__item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+    <a class="tabbar__item is-active" href="search.html" aria-current="page"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+    <a class="tabbar__item" href="library.html"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+    <a class="tabbar__item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="tab-count" aria-label="3 active downloads">3</span></a>
+  </nav>
+</div>
+
+<!-- ================================================================ STATE VARIANTS -->
+<div class="states">
+  <div class="states__intro">
+    <div class="eyebrow">Search — state variants</div>
+    <p class="muted">Appendix: the page content area in each state. To see any state inside the real shell, open this file with <code>?state=recent</code>, <code>loading</code>, <code>menu</code>, <code>menu-playlist</code>, <code>offline</code>, <code>empty</code> or <code>error</code>.</p>
+  </div>
+
+  <!-- Recent searches -->
+  <section class="state">
+    <div class="state__label"><h4>Empty query — recent searches</h4><p>Shown when the field is focused and empty. Tap a query to search again, or an item to open it; × removes one, Clear all removes every entry.</p></div>
+    <div class="state__frame"><div class="page" data-state-page="recent">
+      <div class="search-head">
+        <div class="search-row"><div class="search search--lg"><svg class="icon"><use href="#i-search"/></svg><input class="search__input is-focus" value="" placeholder="Songs, albums or artists" aria-label="Search YouTube Music"></div><a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a></div>
+      </div>
+      <section class="group recent">
+        <div class="section-head"><h3>Recent searches</h3><button class="btn btn--ghost btn--sm">Clear all</button></div>
+        <div class="list">
+          <div class="row row--recent is-hover"><div class="recent-ic"><svg class="icon"><use href="#i-clock"/></svg></div><div class="row__main"><div class="row__title">khruangbin</div><div class="row__sub">Search · yesterday</div></div><button class="btn btn--icon btn--sm" aria-label="Remove khruangbin from recent searches"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+          <div class="row row--recent"><div class="art art--1"><svg><use href="#g-orbs"/></svg><span>HW</span></div><div class="row__main"><div class="row__title">Heat Waves</div><div class="row__sub"><span class="row__text">Song · Glass Animals</span></div></div><button class="btn btn--icon btn--sm" aria-label="Remove Heat Waves"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+          <div class="row row--recent"><div class="art art--round art--3"><svg><use href="#g-waves"/></svg><span>PB</span></div><div class="row__main"><div class="row__title">Phoebe Bridgers</div><div class="row__sub">Artist</div></div><button class="btn btn--icon btn--sm" aria-label="Remove Phoebe Bridgers"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+          <div class="row row--recent"><div class="art art--5"><svg><use href="#g-rings"/></svg><span>td</span></div><div class="row__main"><div class="row__title">ten days</div><div class="row__sub"><span class="row__text">Album · Fred again..</span></div></div><button class="btn btn--icon btn--sm" aria-label="Remove ten days"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+          <div class="row row--recent"><div class="recent-ic"><svg class="icon"><use href="#i-clock"/></svg></div><div class="row__main"><div class="row__title">bonobo migration</div><div class="row__sub">Search · 3 days ago</div></div><button class="btn btn--icon btn--sm" aria-label="Remove bonobo migration from recent searches"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+        </div>
+      </section>
+    </div></div>
+  </section>
+
+  <!-- Loading skeleton -->
+  <section class="state">
+    <div class="state__label"><h4>Loading — searching YouTube Music</h4><p>Shown while results come back from the network. Groups keep their shape so nothing jumps.</p></div>
+    <div class="state__frame"><div class="page" data-state-page="loading">
+      <div class="search-head">
+        <div class="search-row"><div class="search search--lg"><svg class="icon"><use href="#i-search"/></svg><input class="search__input is-focus" value="khruangbin" aria-label="Search YouTube Music"><button class="btn btn--icon search__clear" aria-label="Clear search"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div><a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a></div>
+        <div class="loading-line t-13 muted num"><div class="progress progress--indeterminate progress--thin"><i></i></div><span>Searching YouTube Music for “khruangbin” · 1.2 s</span></div>
+      </div>
+      <div class="results" aria-busy="true">
+        <section class="group">
+          <div class="section-head"><h3>Top result</h3></div>
+          <div class="card top-card top-card--skel">
+            <div class="top-card__head">
+              <i class="skel skel--art"></i>
+              <div class="top-card__id"><div class="skel-badges"><i class="skel"></i><i class="skel"></i></div><i class="skel skel--title skel-w70"></i><i class="skel skel--text skel-w55"></i></div>
+            </div>
+            <i class="skel skel--text w-100"></i>
+            <i class="skel skel--pill"></i>
+          </div>
+        </section>
+        <section class="group">
+          <div class="section-head"><h3>Songs</h3></div>
+          <div class="list">
+            <div class="skel-row skel-row--result"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title skel-w80"></i><i class="skel skel--text w-40"></i></div><i class="skel skel--text skel-dur"></i><div class="skel-act"><i class="skel skel--circle"></i><i class="skel skel--btn"></i><i class="skel skel--circle"></i><i class="skel skel--circle"></i></div></div>
+            <div class="skel-row skel-row--result"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title skel-w55"></i><i class="skel skel--text skel-w60"></i></div><i class="skel skel--text skel-dur"></i><div class="skel-act"><i class="skel skel--circle"></i><i class="skel skel--btn"></i><i class="skel skel--circle"></i><i class="skel skel--circle"></i></div></div>
+            <div class="skel-row skel-row--result"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title skel-w40"></i><i class="skel skel--text skel-w30"></i></div><i class="skel skel--text skel-dur"></i><div class="skel-act"><i class="skel skel--circle"></i><i class="skel skel--btn"></i><i class="skel skel--circle"></i><i class="skel skel--circle"></i></div></div>
+            <div class="skel-row skel-row--result"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title skel-w70"></i><i class="skel skel--text w-40"></i></div><i class="skel skel--text skel-dur"></i><div class="skel-act"><i class="skel skel--circle"></i><i class="skel skel--btn"></i><i class="skel skel--circle"></i><i class="skel skel--circle"></i></div></div>
+            <div class="skel-row skel-row--result"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title skel-w45"></i><i class="skel skel--text skel-w50"></i></div><i class="skel skel--text skel-dur"></i><div class="skel-act"><i class="skel skel--circle"></i><i class="skel skel--btn"></i><i class="skel skel--circle"></i><i class="skel skel--circle"></i></div></div>
+            <div class="skel-row skel-row--result"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title skel-w60"></i><i class="skel skel--text w-40"></i></div><i class="skel skel--text skel-dur"></i><div class="skel-act"><i class="skel skel--circle"></i><i class="skel skel--btn"></i><i class="skel skel--circle"></i><i class="skel skel--circle"></i></div></div>
+          </div>
+        </section>
+      </div>
+      <div class="discog" aria-busy="true">
+        <section class="group group--albums">
+          <div class="section-head"><h3>Albums</h3></div>
+          <div class="skel-tiles">
+            <div class="skel-tile"><i class="skel skel--tile"></i><i class="skel skel--title skel-w70"></i><i class="skel skel--text w-40"></i></div>
+            <div class="skel-tile"><i class="skel skel--tile"></i><i class="skel skel--title skel-w55"></i><i class="skel skel--text w-40"></i></div>
+            <div class="skel-tile desktop-only"><i class="skel skel--tile"></i><i class="skel skel--title skel-w80"></i><i class="skel skel--text w-40"></i></div>
+            <div class="skel-tile desktop-only"><i class="skel skel--tile"></i><i class="skel skel--title skel-w45"></i><i class="skel skel--text w-40"></i></div>
+          </div>
+        </section>
+        <section class="group group--artists">
+          <div class="section-head"><h3>Artists</h3></div>
+          <div class="list">
+            <div class="skel-artist"><i class="skel skel--round"></i><div class="stack stack--2"><i class="skel skel--title skel-w55"></i><i class="skel skel--text skel-w40"></i></div></div>
+            <div class="skel-artist"><i class="skel skel--round"></i><div class="stack stack--2"><i class="skel skel--title skel-w70"></i><i class="skel skel--text skel-w30"></i></div></div>
+          </div>
+        </section>
+      </div>
+    </div></div>
+  </section>
+
+  <!-- Row menu -->
+  <section class="state">
+    <div class="state__label"><h4>Row menu (⋯) — Like, Download, Add to playlist</h4><p>Desktop: popover under ⋯ with a submenu (<code>?state=menu</code>). Phone: bottom sheet with the song at the top and 48px rows; Add to playlist opens a second sheet with New playlist… first (<code>?state=menu</code>, <code>?state=menu-playlist</code>).</p></div>
+    <div class="state__frame desktop-only"><div class="page">
+      <div class="list">
+        <div class="row row--result is-hover"><div class="art art--5"><svg><use href="#g-rings"/></svg><span>td</span></div><div class="row__main"><div class="row__title">leavemealone</div><div class="row__sub"><span class="row__text">Fred again.., Baby Keem<span class="sub-album"> · ten days</span></span></div></div><div class="row__dur">3:21</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Stream leavemealone"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><button class="btn btn--secondary btn--sm btn-dl" aria-label="Download leavemealone"><svg class="icon icon--16"><use href="#i-download"/></svg><span class="btn-dl__label">Download</span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like" aria-label="Like leavemealone"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu is-active" aria-label="More for leavemealone" aria-expanded="true"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+      </div>
+      <div class="menu-demo">
+        <div class="menu" role="menu" aria-label="leavemealone">
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-play-next"/></svg>Play next</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-queue"/></svg>Add to queue</button>
+          <button class="menu__item is-hover" role="menuitem" aria-haspopup="menu" aria-expanded="true"><svg class="icon"><use href="#i-plus"/></svg>Add to playlist<svg class="icon icon--chev"><use href="#i-chevron-right"/></svg></button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-heart"/></svg>Like</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-download"/></svg>Download<span class="menu__hint num">7.8 MB</span></button>
+          <div class="menu__sep"></div>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-disc"/></svg>Go to album</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-user"/></svg>Go to artist</button>
+        </div>
+        <div class="menu" role="menu" aria-label="Add to playlist">
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-plus"/></svg>New playlist…</button>
+          <div class="menu__sep"></div>
+          <button class="menu__item is-hover" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Late drives<span class="menu__count">42 songs</span></button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Focus — no vocals<span class="menu__count">87 songs</span></button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Gym 2026<span class="menu__count">23 songs</span></button>
+        </div>
+      </div>
+    </div></div>
+    <div class="state__frame phone-only"><div class="sheet-stage phone-only" data-sheet="menu"><div class="sheet-stage__bg" aria-hidden="true"><div class="list">
+<div class="row row--result"><div class="art art--2"><svg><use href="#g-waves"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Marea (we’ve lost dancing)</div><div class="row__sub"><span class="row__text">Fred again.., The Blessed Madonna</span></div></div><div class="row__dur">4:48</div></div>
+<div class="row row--result"><div class="art art--1"><svg><use href="#g-orbs"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Jungle</div><div class="row__sub"><span class="row__text">Fred again..</span></div></div><div class="row__dur">3:15</div></div>
+<div class="row row--result"><div class="art art--5"><svg><use href="#g-rings"/></svg><span>td</span></div><div class="row__main"><div class="row__title">leavemealone</div><div class="row__sub"><span class="row__text">Fred again.., Baby Keem</span></div></div><div class="row__dur">3:21</div></div>
+<div class="row row--result"><div class="art art--2"><svg><use href="#g-waves"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Danielle (smile on my face)</div><div class="row__sub"><span class="row__text">Fred again..</span></div></div><div class="row__dur">3:35</div></div>
+</div></div>
+<div class="scrim scrim--sheet"><div class="sheet" role="dialog" aria-label="Options for leavemealone">
+<div class="sheet__grab"></div>
+<div class="sheet__head"><div class="art art--5"><svg><use href="#g-rings"/></svg><span>td</span></div><div class="row__main"><div class="row__title">leavemealone</div><div class="row__sub"><span class="row__text">Fred again.., Baby Keem · 3:21</span></div></div></div>
+<div class="menu" role="menu" aria-label="leavemealone">
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-play-next"/></svg>Play next</button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-queue"/></svg>Add to queue</button>
+<button class="menu__item" role="menuitem" aria-haspopup="dialog"><svg class="icon"><use href="#i-plus"/></svg>Add to playlist<svg class="icon icon--chev"><use href="#i-chevron-right"/></svg></button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-heart"/></svg>Like</button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-download"/></svg>Download<span class="menu__hint num">7.8 MB</span></button>
+<div class="menu__sep"></div>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-disc"/></svg>Go to album</button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-user"/></svg>Go to artist</button>
+</div></div></div></div></div>
+    <div class="state__frame phone-only"><div class="sheet-stage phone-only" data-sheet="menu-playlist"><div class="sheet-stage__bg" aria-hidden="true"><div class="list">
+<div class="row row--result"><div class="art art--2"><svg><use href="#g-waves"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Marea (we’ve lost dancing)</div><div class="row__sub"><span class="row__text">Fred again.., The Blessed Madonna</span></div></div><div class="row__dur">4:48</div></div>
+<div class="row row--result"><div class="art art--1"><svg><use href="#g-orbs"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Jungle</div><div class="row__sub"><span class="row__text">Fred again..</span></div></div><div class="row__dur">3:15</div></div>
+<div class="row row--result"><div class="art art--5"><svg><use href="#g-rings"/></svg><span>td</span></div><div class="row__main"><div class="row__title">leavemealone</div><div class="row__sub"><span class="row__text">Fred again.., Baby Keem</span></div></div><div class="row__dur">3:21</div></div>
+<div class="row row--result"><div class="art art--2"><svg><use href="#g-waves"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Danielle (smile on my face)</div><div class="row__sub"><span class="row__text">Fred again..</span></div></div><div class="row__dur">3:35</div></div>
+</div></div>
+<div class="scrim scrim--sheet"><div class="sheet" role="dialog" aria-label="Add leavemealone to a playlist">
+<div class="sheet__grab"></div>
+<div class="sheet__head sheet__head--back"><button class="btn btn--icon" aria-label="Back to options"><svg class="icon"><use href="#i-chevron-left"/></svg></button><div class="row__main"><div class="sheet__title">Add to playlist</div><div class="row__sub"><span class="row__text">leavemealone · Fred again.., Baby Keem</span></div></div></div>
+<div class="menu" role="menu" aria-label="Add to playlist">
+<button class="menu__item menu__item--new" role="menuitem"><svg class="icon"><use href="#i-plus"/></svg>New playlist…</button>
+<div class="menu__sep"></div>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Late drives<span class="menu__count">42 songs</span></button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Focus — no vocals<span class="menu__count">87 songs</span></button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Gym 2026<span class="menu__count">23 songs</span></button>
+<button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Sunday reset<span class="menu__count">16 songs</span></button>
+</div></div></div></div></div>
+  </section>
+
+  <!-- Offline -->
+  <section class="state">
+    <div class="state__label"><h4>Offline — library matches</h4><p>No connection: search falls back to what is already on this device. Everything listed plays offline.</p></div>
+    <div class="state__frame"><div class="page" data-state-page="offline">
+      <div class="search-head">
+        <div class="search-row"><div class="search search--lg"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" value="fred again" aria-label="Search your library"><button class="btn btn--icon search__clear" aria-label="Clear search"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div><a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloads paused until you reconnect"><svg class="icon icon--16"><use href="#i-offline"/></svg><span><span class="strong">3 paused</span> · resume when online</span><i class="dl-status__bar" style="--p:62%"></i></a></div>
+        <div class="scope">
+          <div class="seg source-seg" role="tablist" aria-label="Search in">
+            <button class="seg__btn" role="tab" aria-selected="false" disabled title="Needs internet"><svg class="icon"><use href="#i-offline"/></svg>YouTube Music</button>
+            <button class="seg__btn is-active" role="tab" aria-selected="true"><svg class="icon"><use href="#i-library"/></svg>Your library <span class="chip__count">4</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="banner banner--warn"><svg class="icon"><use href="#i-offline"/></svg><div class="banner__body"><div class="banner__title">Search needs internet — showing your library matches</div><div class="banner__text">Streaming and new downloads come back when you reconnect.</div></div><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-refresh"/></svg>Retry</button></div>
+      <section class="group">
+        <div class="section-head"><h3>Songs<span class="section-head__sub num">4 in your library</span></h3><button class="btn btn--secondary btn--sm"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg>Play all</button></div>
+        <div class="list">
+          <div class="row row--result is-dl is-playing"><div class="art art--1"><svg><use href="#g-orbs"/></svg><span>AL</span></div><div class="row__main"><div class="row__title"><span class="eq" aria-label="Playing"><i></i><i></i><i></i></span>Delilah (pull me out of this)</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__text">Fred again..<span class="sub-album"> · Actual Life 3</span></span></div></div><div class="row__dur">4:33</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Pause Delilah"><svg class="icon icon--16 icon--fill"><use href="#i-pause"/></svg></button></span><span class="act act--state"><button class="btn btn--secondary btn--sm btn-dl is-done" aria-label="Downloaded, plays offline. Remove download"><svg class="icon icon--16"><use href="#i-check"/></svg><span class="btn-dl__label">Downloaded</span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for Delilah"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+          <div class="row row--result is-dl"><div class="art art--5"><svg><use href="#g-rings"/></svg><span>td</span></div><div class="row__main"><div class="row__title">adore u</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__text">Fred again.., Obongjayar<span class="sub-album"> · ten days</span></span></div></div><div class="row__dur">3:57</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Play adore u"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><button class="btn btn--secondary btn--sm btn-dl is-done" aria-label="Downloaded, plays offline. Remove download"><svg class="icon icon--16"><use href="#i-check"/></svg><span class="btn-dl__label">Downloaded</span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like" aria-label="Like adore u"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for adore u"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+          <div class="row row--result is-dl"><div class="art art--2"><svg><use href="#g-waves"/></svg><span>AL</span></div><div class="row__main"><div class="row__title">Kyle (i found you)</div><div class="row__sub"><i class="badge sub-dl badge--device"><svg class="icon"><use href="#i-device"/></svg>On device</i><span class="row__text">Fred again..<span class="sub-album"> · Actual Life</span></span></div></div><div class="row__dur">4:02</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Play Kyle, on this device"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><span class="badge badge--device"><svg class="icon"><use href="#i-device"/></svg><span class="badge__label">On device</span></span></span><span class="act act--like"><button class="btn btn--icon btn--sm like" aria-label="Like Kyle"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for Kyle"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+          <div class="row row--result is-dl"><div class="art art--3"><svg><use href="#g-waves"/></svg><span>AL2</span></div><div class="row__main"><div class="row__title">Billie (loving arms)</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__text">Fred again..<span class="sub-album"> · Actual Life 2</span></span></div></div><div class="row__dur">3:12</div><div class="row__actions"><span class="act act--play"><button class="btn btn--icon btn--sm row__play" aria-label="Play Billie"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></span><span class="act act--state"><button class="btn btn--secondary btn--sm btn-dl is-done" aria-label="Downloaded, plays offline. Remove download"><svg class="icon icon--16"><use href="#i-check"/></svg><span class="btn-dl__label">Downloaded</span></button></span><span class="act act--like"><button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button></span><span class="act act--more"><button class="btn btn--icon btn--sm row__menu" aria-label="More for Billie"><svg class="icon icon--16"><use href="#i-more"/></svg></button></span></div></div>
+        </div>
+      </section>
+    </div></div>
+  </section>
+
+  <!-- No results + error -->
+  <section class="state">
+    <div class="state__label"><h4>No results · and network error</h4><p>No results offers a shorter query inline. A failed request says what happened and how to retry.</p></div>
+    <div class="state-pair">
+      <div class="state__frame"><div class="page" data-state-page="empty">
+        <div class="search-head">
+          <div class="search-row"><div class="search search--lg"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" value="khruangbin live at stubbs 2019" aria-label="Search YouTube Music"><button class="btn btn--icon search__clear" aria-label="Clear search"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div><a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a></div>
+        </div>
+        <div class="card card--flush">
+          <div class="empty">
+            <div class="empty__icon"><svg class="icon"><use href="#i-search"/></svg></div>
+            <div class="empty__title">No results</div>
+            <div class="empty__text">Nothing on YouTube Music matches “khruangbin live at stubbs 2019”. Check the spelling, or search just the artist or song name.</div>
+            <div class="empty__actions">
+              <button class="btn btn--primary"><svg class="icon"><use href="#i-search"/></svg>Search “khruangbin”</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+      <div class="state__frame"><div class="page" data-state-page="error">
+        <div class="search-head">
+          <div class="search-row"><div class="search search--lg"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" value="khruangbin" aria-label="Search YouTube Music"><button class="btn btn--icon search__clear" aria-label="Clear search"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div><a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a></div>
+        </div>
+        <div class="card card--flush">
+          <div class="empty empty--error">
+            <div class="empty__icon"><svg class="icon"><use href="#i-alert"/></svg></div>
+            <div class="empty__title">YouTube Music didn’t respond</div>
+            <div class="empty__text num">Timed out after 15 s · attempt 2 of 3. Your connection looks fine, so this is usually temporary.</div>
+            <div class="empty__actions">
+              <button class="btn btn--secondary"><svg class="icon"><use href="#i-refresh"/></svg>Try again</button>
+            </div>
+          </div>
+        </div>
+      </div></div>
+    </div>
+  </section>
+</div>
+
+</body>
+</html>

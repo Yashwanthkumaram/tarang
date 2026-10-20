@@ -1,0 +1,1128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Player — Now Playing</title>
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<script>/* ?state=<id> shows only the review state tagged data-state="<id>" */(function(){var s=new URLSearchParams(location.search).get('state');if(!s)return;addEventListener('DOMContentLoaded',function(){var t=document.querySelector('[data-state="'+s+'"]');if(!t)return;for(var n=t;n&&n!==document.body;n=n.parentElement){var p=n.parentElement;if(!p)break;for(var i=0;i<p.children.length;i++){var c=p.children[i];if(c!==n&&!/^(SCRIPT|STYLE)$/.test(c.tagName)&&c.id!=='sprite')c.style.display='none';}}t.style.margin='0';window.scrollTo(0,0);});})()</script>
+<link rel="stylesheet" href="../system.css">
+<style>
+  /* Breadcrumb: shared sub-page pattern (back arrow + breadcrumb) */
+  .crumb { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-13); color: var(--text-2); margin-bottom: var(--sp-1); }
+  .crumb a { color: var(--text-2); }
+  .crumb a:hover { color: var(--text); }
+  .crumb .icon { width: 14px; height: 14px; color: var(--text-3); }
+  /* ---- Now Playing (tokens only; no new colours; sizes on the 4-pt grid) ---- */
+  .np-root {
+    --np-queue-w: calc(var(--sp-10) * 9);   /* 360 */
+    --np-queue-w-sm: calc(var(--sp-10) * 7.5);/* 300: leaves >=160px for titles */
+    --np-art-max: calc(var(--sp-10) * 9);   /* 360 */
+    --np-art-min: calc(var(--sp-10) * 6);   /* 240 */
+    --np-out-vol: calc(var(--sp-10) * 4);   /* 160 */
+    --np-voice-art: calc(var(--sp-10) * 6); /* 240 */
+    --np-menu-w: calc(var(--sp-10) * 7);    /* 280 */
+    --np-strip-w: calc(var(--sp-10) * 9.75);/* 390: phone width */
+  }
+
+  /* Icon sizes this screen needs beyond system.css */
+  .icon--20 { width: var(--sp-5); height: var(--sp-5); }
+  .icon--28 { width: calc(var(--sp-6) + var(--sp-1)); height: calc(var(--sp-6) + var(--sp-1)); }
+  .np-ic-inline { display: inline; vertical-align: calc(var(--sp-1) * -1); margin-right: var(--sp-2); }
+  .np-mt-1 { margin-top: var(--sp-1); }
+  .np-mt-2 { margin-top: var(--sp-2); }
+
+  /* Play/pause: glyph always 20px (bar) / 24-28px (hero), centred in the circle */
+  .btn--play .icon.icon--20 { width: var(--sp-5); height: var(--sp-5); }
+  .btn--play .icon.icon--24 { width: var(--sp-6); height: var(--sp-6); }
+  .btn--play .icon.icon--28 { width: calc(var(--sp-6) + var(--sp-1)); height: calc(var(--sp-6) + var(--sp-1)); }
+  .btn--play.np-play--accent { background: var(--accent); color: var(--on-accent); }
+  .btn--play.np-play--accent:hover, .btn--play.np-play--accent.is-hover { background: var(--accent-hover); }
+  .btn--play.np-play--accent:active { background: var(--accent-active); }
+  .btn--play:focus-visible { outline: var(--halo-w) solid var(--accent); outline-offset: var(--halo-w); }
+
+  /* Desktop: the player bar's "now" block is this screen's nav entry, shown as current */
+  .np-now { border-radius: var(--r-ctl); padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1); margin-left: calc(var(--sp-1) * -1); color: var(--text); text-decoration: none; }
+  .np-now:hover { text-decoration: none; background: var(--surface-2); }
+  .np-now.is-current { background: var(--accent-soft); }
+  .np-now.is-current .player-bar__title { color: var(--accent-text); }
+  .np-now__chev { color: var(--accent-text); flex: none; }
+  .np-timer { display: inline-flex; align-items: center; gap: var(--sp-1); height: calc(var(--sp-3) * 3); padding: 0 var(--sp-2); border-radius: var(--r-pill); color: var(--accent-text); font-size: var(--fs-12); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+  .np-timer:hover { background: var(--accent-soft); }
+  /* Now Playing open: the hero owns transport + scrubber, so the bar's centre shows only what's next */
+  .np-bar-next { display: none; }
+  .app > .player-bar .np-bar-center > .transport, .app > .player-bar .np-bar-center > .scrubber { display: none; }
+  .app > .player-bar .np-bar-next { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; max-width: 100%; }
+  .np-text { color: var(--text); }
+
+  /* Streaming / Downloaded indicator */
+  .np-eyerow { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+  .np-src--st { background: var(--surface-2); color: var(--text-2); }
+  .np-src-ic { flex: none; }
+  .np-src-ic--dl { color: var(--ok); }
+  .np-src-ic--st { color: var(--text-3); }
+  .np-barsub, .np-minisub { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; white-space: nowrap; }
+  .np-minisub .truncate, .np-barsub .truncate { min-width: 0; }
+  .np-legend { display: flex; gap: var(--sp-3); }
+  .np-legend > span { display: inline-flex; align-items: center; gap: var(--sp-1); }
+
+  /* Download action: idle · in progress (fill shows %) · done */
+  .np-dl.is-busy { pointer-events: auto; color: var(--accent-text); border-color: var(--accent-soft-2); background: linear-gradient(90deg, var(--accent-soft) var(--p), var(--surface) var(--p)); }
+  .np-dl.is-done { color: var(--ok); }
+  .np-dl.is-done .icon, .np-dl-ic.is-done { color: var(--ok); }
+  .np-dlstates { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: var(--sp-4); }
+  .np-dlstates .eyebrow { margin-right: var(--sp-2); }
+
+  /* Buffering: spinner thumb at the buffer edge, spinner ring on play */
+  .scrubber .scrubber__thumb.np-thumb--spin { opacity: 1; width: var(--sp-4); height: var(--sp-4); margin-left: calc(var(--sp-2) * -1); background: var(--surface); border: var(--halo-w) solid var(--accent-soft-2); border-top-color: var(--accent); border-right-color: var(--accent); box-shadow: 0 0 0 var(--halo-w) var(--surface); }
+  .np-buftext { font-size: var(--fs-12); color: var(--accent-text); font-weight: var(--fw-semibold); white-space: nowrap; }
+  .scrubber--inline .scrubber__times .np-buftext { min-width: calc(var(--sp-16) + var(--sp-6)); }
+  .btn--play.np-play--buffer { position: relative; overflow: visible; }
+  .btn--play.np-play--buffer::before { content: ""; position: absolute; inset: calc(var(--sp-1) * -1 - var(--halo-w)); border-radius: 50%; border: var(--halo-w) solid var(--accent-soft-2); border-top-color: var(--accent); border-right-color: var(--accent); }
+  .np-stream { display: grid; grid-template-columns: minmax(0, 1fr) var(--np-strip-w); gap: var(--sp-8); align-items: start; }
+  .np-smock { display: grid; grid-template-columns: calc(var(--sp-10) * 5) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+  .np-smock__body { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+  .np-bufrows { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .np-bufrow { display: grid; grid-template-columns: calc(var(--sp-12) + var(--sp-2)) minmax(0, 1fr) auto; align-items: center; gap: var(--sp-4); }
+  .np-bufrow .btn--play { width: var(--sp-10); height: var(--sp-10); }
+  .np-pstrip { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-4) var(--gutter) 0; }
+  .np-pstrip .np-scrub .scrubber__track { height: var(--touch-min); }
+  .np-pstrip .np-scrub .scrubber__times { margin-top: calc(var(--sp-3) * -1); }
+  .np-pstrip .np-transport .btn--play { width: calc(var(--sp-16) + var(--sp-2)); height: calc(var(--sp-16) + var(--sp-2)); }
+  .np-pstrip .np-strip-mini { margin: var(--sp-2) calc(var(--gutter) * -1) 0; border-top: var(--border-w) solid var(--border); }
+  .np-pstrip .np-titlerow .btn--icon, .np-dl-ic { width: var(--touch-min); height: var(--touch-min); }
+  .np-errbtns { display: flex; gap: var(--sp-2); flex-wrap: wrap; justify-content: flex-end; }
+  .np-mini-play .spinner { color: var(--accent); }
+  .player-bar__right .is-on { color: var(--accent-text); background: var(--accent-soft); }
+
+  /* The shell is one screen tall (capped) and the page body scrolls, so state variants render below it */
+  .np-root .app { height: min(100vh, calc(var(--sp-10) * 24)); height: min(100dvh, calc(var(--sp-10) * 24)); }
+  .np-root .mini-player__progress { height: var(--sp-1); background: var(--surface-3); }
+  .np-root .mini-player__progress > i { background: var(--accent); }
+
+  /* Topbar */
+  .np-topbar .topbar__title { margin-right: 0; }
+  .np-context { display: flex; flex-direction: column; min-width: 0; margin-right: auto; line-height: 1.25; }
+  .np-context__label { font-size: var(--fs-12); color: var(--text-2); }
+  .np-context__name { font-weight: var(--fw-semibold); }
+
+  /* Desktop layout: hero (stage: art + transport | info) | queue panel */
+  .np-page { max-width: var(--content-max); }
+  .np-grid { display: grid; grid-template-columns: minmax(0, 1fr) var(--np-queue-w); gap: var(--sp-6); align-items: start; }
+  .np-hero { display: grid; grid-template-columns: minmax(var(--np-art-min), var(--np-art-max)) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+  .np-stage { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; }
+  .np-art { width: 100%; }
+  .np-sprite { display: none; }
+  .art .np-art__tag { position: absolute; left: var(--sp-4); bottom: var(--sp-3); font-size: var(--fs-12); font-weight: var(--fw-bold); letter-spacing: var(--track-eyebrow); text-transform: uppercase; }
+
+  /* Large transport block under the artwork (the screen's primary action) */
+  .np-deck { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .np-scrub .scrubber__thumb { opacity: 1; }
+  .np-scrub { gap: 0; }
+  .np-scrub .scrubber__times { font-size: var(--fs-12); color: var(--text-2); margin-top: calc(var(--sp-2) * -1); } /* bar sits mid-track; times land 4-8px under it */
+  .np-deck__row { display: flex; align-items: center; justify-content: space-between; }
+  .np-deck__row .btn--icon { position: relative; }
+  .np-deck__row .np-mode { width: var(--sp-10); height: var(--sp-10); }
+  .np-deck__row .np-skipbtn { width: var(--sp-12); height: var(--sp-12); color: var(--text); }
+  .np-deck__row .btn--play { width: calc(var(--sp-12) + var(--sp-2)); height: calc(var(--sp-12) + var(--sp-2)); }
+  .np-deck__row .is-on, .np-transport .is-on { color: var(--accent-text); }
+  .np-deck__row .is-on::after, .np-transport .is-on::after { content: ""; position: absolute; bottom: var(--sp-1); left: 50%; transform: translateX(-50%); width: var(--sp-1); height: var(--sp-1); border-radius: 50%; background: var(--accent); }
+
+  .np-info { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+  .np-title { font-size: var(--fs-36); line-height: var(--lh-tight); margin-top: var(--sp-2); }
+  .np-sub { font-size: var(--fs-16); color: var(--text-2); display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; margin-top: var(--sp-2); }
+  .np-sub--sm { font-size: var(--fs-14); margin-top: var(--sp-1); }
+  .np-sub a { color: var(--text); font-weight: var(--fw-medium); }
+  .np-sub .sep::before { content: "·"; color: var(--text-3); }
+  .np-actions { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
+  .np-actions .like.is-liked { border-color: var(--accent-soft-2); background: var(--accent-soft); color: var(--accent-text); }
+  .np-actions .like.is-liked .icon { fill: currentColor; }
+
+  .np-cards { display: grid; grid-template-columns: 1fr; gap: var(--sp-3); }
+  .np-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); margin-bottom: var(--sp-3); }
+  .np-card__head .card__title { font-size: var(--fs-14); }
+  .np-card__value { font-size: var(--fs-13); color: var(--accent-text); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .np-out { display: grid; grid-template-columns: minmax(0, 1fr) var(--np-out-vol); gap: var(--sp-3); align-items: center; }
+  .np-out .volume { width: 100%; }
+  .np-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-2) var(--sp-4); font-size: var(--fs-13); }
+  .np-facts dt { color: var(--text-3); }
+  .np-facts dd { margin: 0; color: var(--text); min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  .np-facts dd .badge { vertical-align: top; }
+  .np-route { color: var(--text-3); margin: 0 var(--sp-1); }
+
+  /* Queue panel */
+  .np-queue { position: sticky; top: calc(var(--topbar-h) + var(--sp-6)); display: flex; flex-direction: column; max-height: calc(min(100vh, calc(var(--sp-10) * 24)) - var(--topbar-h) - var(--player-h) - var(--sp-12)); }
+  .np-queue__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); padding: var(--sp-4) var(--sp-3) var(--sp-2) var(--sp-4); }
+  .np-queue__head h3 { font-size: var(--fs-20); }
+  .np-queue__body { overflow-y: auto; padding: 0 var(--sp-2); }
+  .np-queue__foot { position: sticky; bottom: 0; height: var(--sp-12); display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); margin: var(--sp-2) calc(var(--sp-2) * -1) 0; padding: 0 var(--sp-2) 0 var(--sp-4); background: var(--surface); border-top: var(--border-w) solid var(--border); font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .np-queue__foot::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: var(--sp-6); background: linear-gradient(to top, var(--surface), transparent); pointer-events: none; }
+  .np-queue .group-head { padding-top: var(--sp-3); }
+  .group-head .btn { order: 3; margin-left: 0; }
+  /* grip | art | title (source glyph + artist) | duration (always visible) | 32px ✕ column */
+  .q-row { position: relative; gap: var(--sp-2); grid-template-columns: var(--sp-4) var(--art-row) minmax(0, 1fr) calc(var(--sp-8) + var(--sp-1)) var(--hit); }
+  .q-row .row__sub { gap: var(--sp-1); }
+  .q-row .q-grip { color: var(--text-3); opacity: 0; cursor: grab; display: grid; place-items: center; }
+  .q-row:hover .q-grip, .q-row.is-hover .q-grip { opacity: 1; }
+  .q-act { display: flex; justify-content: center; opacity: 0; }
+  .q-row:hover .q-act, .q-row.is-hover .q-act, .q-row:focus-within .q-act, .q-row.is-playing .q-act { opacity: 1; }
+  .q-row.is-playing .q-grip { opacity: 1; }
+
+  /* Phone full player (hidden on desktop main view; reused inside state frames) */
+  .np-phone { display: none; }
+  .np-transport { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+  .np-transport .btn--icon { position: relative; }
+  .np-transport .np-skipbtn { color: var(--text); }
+  .np-util { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-2); }
+  .np-util__btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: calc(var(--sp-12) + var(--sp-1)); padding: var(--sp-1); border-radius: var(--r-ctl); color: var(--text-2); font-size: var(--fs-12); font-weight: var(--fw-medium); text-align: center; min-width: 0; }
+  .np-util__btn > span { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; white-space: nowrap; }
+  .np-util__btn:hover, .np-util__btn.is-hover { background: var(--surface-2); color: var(--text); }
+  .np-util__btn.is-on { color: var(--accent-text); }
+  .np-util__chev { width: var(--sp-3); height: var(--sp-3); max-width: none; }
+  .np-titlerow { display: flex; align-items: center; gap: var(--sp-3); }
+  .np-titlerow .grow { min-width: 0; }
+  .np-titlerow__title { font-size: var(--fs-20); font-weight: var(--fw-bold); letter-spacing: var(--track-tight); line-height: var(--lh-tight); }
+  .np-titlerow__title--lg { font-size: var(--fs-28); margin-top: var(--sp-2); }
+  .np-titlerow__sub { font-size: var(--fs-14); color: var(--text-2); margin-top: var(--sp-1); }
+  .np-sheethead { display: none; }
+  .np-peek__count { font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; text-align: right; }
+  .np-peek { display: grid; grid-template-columns: auto var(--art-row) minmax(0, 1fr) auto auto; align-items: center; gap: var(--sp-3); min-height: var(--sp-16); padding: var(--sp-2) var(--sp-3); background: var(--surface); border: var(--border-w) solid var(--border); border-radius: var(--r-card); text-align: left; width: 100%; }
+  .np-peek:hover { background: var(--surface-2); }
+  .np-peek__main { display: flex; flex-direction: column; min-width: 0; }
+  .np-cards .seg--block .seg__btn { flex: 1 1 auto; padding: 0 var(--sp-2); }
+
+  /* Mini player: elapsed / total leads the subtitle and is never truncated */
+  .np-mini__time { font-variant-numeric: tabular-nums; color: var(--text); font-weight: var(--fw-medium); } /* time leads the line, so truncation only ever eats the artist */
+
+  /* ---- State variants ---- */
+  .states { width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--sp-10) var(--gutter) var(--sp-16); display: flex; flex-direction: column; gap: var(--sp-8); }
+  .states__intro { display: flex; flex-direction: column; gap: var(--sp-1); padding-bottom: var(--sp-4); border-bottom: var(--border-w) solid var(--border); }
+  .state { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .state__label { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+  .state__label p { font-size: var(--fs-13); color: var(--text-2); }
+  .state__frame { border: var(--border-w) solid var(--border); border-radius: var(--r-card); background: var(--page); overflow: hidden; }
+  .state__pad { padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); }
+  .state-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-4); align-items: start; }
+  .state-trio { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+  .state-pair__label { margin-bottom: var(--sp-2); }
+
+  /* Voice variant */
+  .np-skip-ic { width: var(--sp-6); height: var(--sp-6); }
+  .np-voice { display: grid; grid-template-columns: var(--np-voice-art) minmax(0, 1fr); gap: var(--sp-6); align-items: center; }
+  .np-voice .art--hero { box-shadow: var(--shadow-2); }
+  .art > svg.np-voice__mic { position: relative; inset: auto; width: var(--sp-12); height: var(--sp-12); }
+  .np-voice__ctrl { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+  .np-voice .wave-wrap { position: relative; padding: var(--sp-1) 0; }
+  .np-voice__times { margin-top: calc(var(--sp-2) * -1); }
+  .np-voice .np-transport { justify-content: center; gap: var(--sp-4); }
+  .np-voice .np-skipbtn { width: var(--sp-12); height: var(--sp-12); }
+  .np-voice__speed { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+  .np-skip { position: relative; }
+  .np-skip b { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--fs-12); font-weight: var(--fw-bold); letter-spacing: -.04em; padding-top: var(--sp-1); transform: scale(.75); }
+
+  /* Collapsed (mini) states */
+  .collapsed { display: flex; flex-direction: column; }
+  .collapsed .player-bar { position: static; border-top: 0; }
+  .state .mini-player { display: flex; border-top: 0; }
+  .state .tabbar { display: flex; height: var(--tabbar-h); }
+  .state .mini-player__progress { top: 0; }
+  .phone-strip { width: var(--np-strip-w); max-width: 100%; border: var(--border-w) solid var(--border); border-radius: var(--r-card); overflow: hidden; background: var(--surface); }
+  .phone-strip .tabbar { border-top: var(--border-w) solid var(--border); }
+
+  /* Sleep timer + queue sheet previews */
+  .menu--queue { width: var(--np-menu-w); }
+  .menu--timer { width: calc(var(--sp-10) * 8); }
+  .menu__head .strong { white-space: nowrap; }
+  .menu--timer .menu__item.is-checked { color: var(--accent-text); font-weight: var(--fw-semibold); }
+  .menu--timer .menu__item.is-checked .icon { color: var(--accent-text); }
+  .menu__head { padding: var(--sp-2) var(--sp-3) var(--sp-1); display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-3); }
+  .menu__head .np-card__value { font-size: var(--fs-13); }
+  .menu__hint { font-variant-numeric: tabular-nums; }
+  .sheet-preview { width: var(--np-strip-w); max-width: 100%; border: var(--border-w) solid var(--border); border-radius: var(--r-card); overflow: hidden; background: var(--scrim); padding-top: var(--sp-10); }
+  .sheet-preview .sheet { box-shadow: none; }
+  .sheet-preview .list { margin: 0 calc(var(--sp-1) * -1); }
+  .sheet-preview .group-head:first-child { padding-top: var(--sp-1); }
+
+
+  /* Add-to-playlist picker */
+  .menu--pl { width: var(--np-menu-w); }
+  .np-pl-search { padding: var(--sp-1) var(--sp-1) var(--sp-2); }
+  .np-pl-search .input { height: var(--sp-8); }
+  .menu--pl .menu__item.is-checked .np-pl-check { color: var(--accent-text); }
+  .np-pl-check { margin-left: var(--sp-1); }
+  .menu--pl .art { width: var(--sp-6); height: var(--sp-6); border-radius: var(--r-sm); font-size: var(--fs-12); flex: none; }
+  .np-pl-toast { width: var(--np-strip-w); max-width: 100%; }
+  .np-pl-foot { padding: var(--sp-2) var(--sp-3) var(--sp-1); font-size: var(--fs-12); color: var(--text-2); }
+  .np-pl-new .icon { color: var(--accent-text); }
+  .np-pl-new { color: var(--accent-text); font-weight: var(--fw-semibold); }
+  /* Offline variant */
+  .np-off-tag { font-size: var(--fs-12); color: var(--text-2); white-space: nowrap; }
+  .np-off .q-row { grid-template-columns: var(--art-row) minmax(0, 1fr) auto; padding-left: var(--sp-2); }
+
+  .err-track { display: flex; align-items: center; gap: var(--sp-3); }
+  .err-track .grow { min-width: 0; }
+  .err-track .scrubber--inline { gap: var(--sp-2); }
+  .err-track .scrubber--inline .scrubber__times span { min-width: 0; } /* 2:07 starts at the title's left edge */
+  .skel-hero { display: grid; grid-template-columns: var(--np-voice-art) minmax(0, 1fr); gap: var(--sp-6); align-items: center; }
+  .skel-hero .skel--tile { border-radius: var(--r-card); }
+  .skel-hero .stack { gap: var(--sp-4); }
+  .skel-deck { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .skel-deck__bar { height: var(--sp-8); display: flex; align-items: center; }
+  .skel-deck .scrubber__times { margin-top: calc(var(--sp-2) * -1); } /* same spacing as the live .np-scrub */
+  .skel-deck__bar .skel { width: 100%; height: var(--sp-1); border-radius: var(--r-pill); }
+  .skel-deck__row { display: flex; align-items: center; justify-content: space-between; margin-top: var(--sp-2); }
+  .skel-deck__row .skel--circle { width: var(--sp-10); height: var(--sp-10); }
+  .skel-deck__row .skel-deck__48 { width: var(--sp-12); height: var(--sp-12); }
+  .skel-deck__play { width: calc(var(--sp-12) + var(--sp-2)); height: calc(var(--sp-12) + var(--sp-2)); border-radius: 50%; background: var(--accent-soft); display: block; }
+
+  @media (max-width: 1279px) {
+    .np-grid { grid-template-columns: minmax(0, 1fr) var(--np-queue-w-sm); }
+    /* Two columns kept: art | title + metadata + actions; transport full width under both, then cards */
+    .np-hero { grid-template-columns: var(--np-art-min) minmax(0, 1fr); grid-template-areas: "art head" "art actions" "deck deck" "cards cards"; grid-template-rows: auto 1fr; gap: var(--sp-5) var(--sp-4); }
+    .np-stage, .np-info { display: contents; }
+    .np-art { grid-area: art; }
+    .np-info__head { grid-area: head; }
+    .np-hero .np-actions { grid-area: actions; align-self: end; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; }
+    .np-hero .np-actions .btn--secondary { justify-content: flex-start; }
+    .np-hero .np-actions .like { grid-row: 1; grid-column: 1; }
+    .np-hero .np-actions .np-dl { grid-row: 1; grid-column: 2; }
+    .np-hero .np-actions .btn--icon { grid-row: 1; grid-column: 3; }
+    .np-hero .np-actions .np-addpl { grid-row: 2; grid-column: 1 / -1; }
+    .np-deck { grid-area: deck; }
+    .np-cards { grid-area: cards; }
+    .np-title { font-size: var(--fs-28); }
+    .np-sub { font-size: var(--fs-14); row-gap: var(--sp-1); }
+    .np-sub > a:first-child { flex-basis: 100%; } /* artist on its own line; album · year · length below */
+    .np-sub > a:first-child + .sep { display: none; }
+    .np-queue__body { padding: 0 var(--sp-1); }
+    .np-queue__foot { margin-left: calc(var(--sp-1) * -1); margin-right: calc(var(--sp-1) * -1); }
+    .q-row { gap: var(--sp-2); grid-template-columns: var(--sp-4) var(--art-row) minmax(0, 1fr) var(--sp-8) var(--hit); }
+    .np-stream { grid-template-columns: minmax(0, 1fr); }
+    .state-trio { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  }
+
+  /* ---- Phone (<= 820): the mini player has expanded into the full Now Playing sheet ---- */
+  @media (max-width: 820px) {
+    .app > .mini-player, .app > .tabbar { display: none; }
+    .np-root .app { height: auto; overflow: visible; display: block; }
+    .np-root .main { overflow: visible; }
+    .np-topbar { display: none; }
+    .np-sheethead { display: flex; align-items: center; gap: var(--sp-2); height: calc(var(--sp-12) + var(--sp-2)); padding: 0 var(--sp-1); flex: none; }
+    .np-sheethead .np-context { align-items: center; text-align: center; margin: 0; flex: 1; }
+    .np-page { padding: 0 var(--gutter) var(--sp-4); gap: 0; }
+    .np-grid { display: block; }
+    .np-hero, .np-queue { display: none; }
+    .np-phone { display: flex; flex-direction: column; gap: var(--sp-5); max-width: calc(var(--sp-10) * 12); margin: 0 auto; } /* fixed rhythm from the spacing scale: never spreads on tall screens */
+    .np-phone .art--hero { width: min(100%, 40vh, calc(var(--sp-10) * 9)); margin: var(--sp-1) auto 0; font-size: var(--fs-36); }
+    .np-phone .np-titlerow { align-items: flex-start; }
+    .np-phone .np-titlerow .btn--icon { margin-top: calc(var(--sp-1) * -1); }
+    .np-phone .np-scrub { margin-top: calc(var(--sp-2) * -1); }
+    .np-phone .np-scrub .scrubber__times { font-size: var(--fs-12); margin-top: calc(var(--sp-3) * -1); } /* 44px hit track: bar centred, times ~7px under it */
+    .np-phone .np-transport { margin-top: calc(var(--sp-1) * -1); }
+    .np-phone .np-transport .btn--play { width: calc(var(--sp-16) + var(--sp-2)); height: calc(var(--sp-16) + var(--sp-2)); }
+    .np-smock { grid-template-columns: minmax(0, 1fr); }
+    .np-smock > .art--hero { width: calc(var(--sp-10) * 5); }
+    .np-bufrow { grid-template-columns: minmax(0, 1fr) auto; }
+    .np-bufrow__tag { grid-column: 1 / -1; }
+    .np-bufrow .btn--play { width: var(--touch-min); height: var(--touch-min); }
+    .np-errbtns { width: 100%; flex-direction: column-reverse; }
+    .np-errbtns .btn { width: 100%; }
+    .np-pstrip .np-titlerow { align-items: flex-start; }
+    .np-facts dd { white-space: normal; overflow-wrap: anywhere; }
+
+    .states { padding: var(--sp-8) var(--gutter) var(--sp-12); gap: var(--sp-6); }
+    .state__pad { padding: var(--sp-4); }
+    .state-pair, .state-trio { grid-template-columns: minmax(0, 1fr); }
+    .state-pair > *, .state-trio > * { min-width: 0; }
+    .err-track { flex-wrap: wrap; }
+    .err-track .grow { flex: 1 1 calc(100% - var(--sp-16) - var(--sp-3)); }
+    .err-track > .btn { width: 100%; }
+    .np-dlstates .eyebrow { flex-basis: 100%; }
+    .np-voice { grid-template-columns: 1fr; }
+    .np-voice .art--hero { width: calc(var(--sp-10) * 5); margin: 0 auto; }
+    .np-voice .np-transport { justify-content: space-between; gap: var(--sp-2); }
+    .np-voice__speed .seg { width: 100%; }
+    .np-voice__speed .seg__btn { flex: 1 1 0; justify-content: center; }
+    .np-skip-ic { width: calc(var(--sp-6) + var(--sp-1)); height: calc(var(--sp-6) + var(--sp-1)); }
+    .skel-hero { grid-template-columns: 1fr; }
+    .skel-hero .skel--tile, .skel-hero > .art--hero { width: calc(var(--sp-10) * 5); margin: 0 auto; }
+    .menu--timer, .menu--queue, .menu--pl { width: 100%; }
+  }
+</style>
+</head>
+<body class="np-root">
+
+<!-- ============ Icon sprite (inline SVG, stroke 2) ============ -->
+<svg id="sprite" class="np-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4h3v16H4zM10 4h3v16h-3zM15.5 5.2l2.9-.8 4.1 14.7-2.9.8z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M6.5 3.8v16.4a1 1 0 0 0 1.5.86l13.2-8.2a1 1 0 0 0 0-1.72L8 2.94a1 1 0 0 0-1.5.86z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="5" y="3" width="5" height="18" rx="1.2"/><rect x="14" y="3" width="5" height="18" rx="1.2"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 6l-10 6 10 6zM5 6v12"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 6l10 6-10 6zM19 6v12"/></symbol>
+  <symbol id="i-skip-prev" viewBox="0 0 24 24"><path d="M19 5.5v13L9 12zM5 5v14"/></symbol>
+  <symbol id="i-skip-next" viewBox="0 0 24 24"><path d="M5 5.5v13L15 12zM19 5v14"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M3 6h12M3 12h12M3 18h8M18 6v10"/><circle cx="16" cy="16.5" r="2.5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-speed" viewBox="0 0 24 24"><path d="M3 17a9 9 0 1 1 18 0M12 14l4-5"/><circle cx="12" cy="14" r="1.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-playlist" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h7M19 9v9M16 13h6"/></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><circle cx="12" cy="14" r="4"/><path d="M12 6h.01"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7M3 3v6h6"/></symbol>
+  <symbol id="i-fwd" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7M21 3v6h-6"/></symbol>
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M2 12h2M6 8v8M10 5v14M14 8v8M18 10v4M22 12h0"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.8 2.8L16.5 9.5"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="M2 2l20 20M8.5 16.5a5 5 0 0 1 7 0M5 12.9a10 10 0 0 1 5.2-2.7M19 12.9a10 10 0 0 0-2-1.5M2 8.8a15 15 0 0 1 4.2-2.7M22 8.8a15 15 0 0 0-11.3-3.8M12 20h.01"/></symbol>
+  <symbol id="i-ytm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="5.5"/><path d="M10.5 9.5v5l4.2-2.5z"/></symbol>
+
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+</svg>
+
+<!-- ================================================================ APP SHELL -->
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sidebar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span>Offline Player</div>
+    <nav class="sidebar__section" aria-label="Primary">
+      <a class="nav-item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+      <a class="nav-item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+      <a class="nav-item" href="library.html"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+      <a class="nav-item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="nav-item__count">3</span></a>
+      <a class="nav-item" href="voice.html"><svg class="icon"><use href="#i-mic"/></svg>Voice recordings<span class="nav-item__count">18</span></a>
+    </nav>
+    <div class="sidebar__section">
+      <div class="eyebrow sidebar__label">Playlists</div>
+      <a class="nav-item nav-item--playlist" href="library.html"><svg class="icon icon--16"><use href="#i-heart"/></svg>Liked songs</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Late drives</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Focus — no vocals</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Gym 2026</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html#create"><svg class="icon icon--16"><use href="#i-plus"/></svg>New playlist</a>
+    </div>
+    <div class="sidebar__section sidebar__foot">
+      <a class="nav-item" href="settings.html"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <!-- Desktop top bar -->
+    <header class="topbar np-topbar">
+      <a class="btn btn--icon topbar__back" href="#" aria-label="Collapse player (Esc)"><svg class="icon"><use href="#i-chevron-left"/></svg></a>
+      <div class="topbar__title phone-only">Now playing</div>
+      <div class="search desktop-only"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" placeholder="Search YouTube Music and your library" aria-label="Search"><span class="search__kbd">Ctrl K</span></div>
+      <a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a>
+      <button class="btn btn--icon phone-only topbar__trail" aria-label="More" aria-haspopup="menu"><svg class="icon"><use href="#i-more"/></svg></button>
+    </header>
+
+    <!-- Phone sheet header (mini player expanded) -->
+    <header class="np-sheethead">
+      <button class="btn btn--icon" aria-label="Collapse to mini player"><svg class="icon icon--24"><use href="#i-chevron-down"/></svg></button>
+      <div class="np-context"><span class="np-context__label">Playing from playlist</span><span class="np-context__name">Late drives</span></div>
+      <button class="btn btn--icon" aria-label="More for Heat Waves: add to playlist, go to album, go to artist, show file" aria-haspopup="menu"><svg class="icon"><use href="#i-more"/></svg></button>
+    </header>
+
+    <div class="page np-page">
+      <div class="np-grid">
+
+        <!-- ====== Desktop hero: artwork + track info + playback options ====== -->
+        <section class="np-hero" aria-label="Now playing">
+          <div class="np-stage">
+            <div class="art art--hero art--1 np-art" role="img" aria-label="Artwork: Dreamland by Glass Animals">
+              <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <circle cx="68" cy="34" r="20" fill="currentColor" fill-opacity=".22"/>
+              <circle cx="68" cy="34" r="12" fill="currentColor" fill-opacity=".28"/>
+              <path d="M0 62 Q12 54 25 62 T50 62 T75 62 T100 62 V100 H0Z" fill="currentColor" fill-opacity=".10"/>
+              <path d="M0 72 Q12 64 25 72 T50 72 T75 72 T100 72 V100 H0Z" fill="currentColor" fill-opacity=".12"/>
+              <path d="M0 82 Q12 74 25 82 T50 82 T75 82 T100 82 V100 H0Z" fill="currentColor" fill-opacity=".14"/>
+            </svg>
+              <span class="np-art__tag">Dreamland</span>
+            </div>
+
+            <!-- Primary action: large transport under the artwork -->
+            <div class="np-deck" role="group" aria-label="Playback">
+              <div class="scrubber np-scrub is-hover" style="--p:35%;--b:100%">
+                <div class="scrubber__track" role="slider" aria-label="Seek" aria-valuetext="1:24 of 3:58"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div>
+                <div class="scrubber__times"><span>1:24</span><span>-2:34</span></div>
+              </div>
+              <div class="np-deck__row">
+                <button class="btn btn--icon np-mode is-on" aria-label="Shuffle on (S)" aria-pressed="true"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+                <button class="btn btn--icon np-skipbtn" aria-label="Previous"><svg class="icon np-skip-ic"><use href="#i-skip-prev"/></svg></button>
+                <button class="btn btn--play np-play--accent" aria-label="Pause (Space)"><svg class="icon icon--24"><use href="#i-pause"/></svg></button>
+                <button class="btn btn--icon np-skipbtn" aria-label="Next"><svg class="icon np-skip-ic"><use href="#i-skip-next"/></svg></button>
+                <button class="btn btn--icon np-mode" aria-label="Repeat off (R)" aria-pressed="false"><svg class="icon"><use href="#i-repeat"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="np-info">
+            <div class="np-info__head">
+              <nav class="crumb desktop-only" aria-label="Breadcrumb"><a href="playlist.html">Late drives</a><svg class="icon" aria-hidden="true"><use href="#i-chevron-right"/></svg><span>Now playing</span></nav>
+              <div class="np-eyerow"><span class="eyebrow">Song · 3 of 24 in Late drives</span><span class="badge badge--ok np-src"><svg class="icon"><use href="#i-check"/></svg>Downloaded</span></div>
+              <h1 class="np-title">Heat Waves</h1>
+              <div class="np-sub"><a href="#">Glass Animals</a><span class="sep"></span><a href="#">Dreamland</a><span class="sep"></span><span class="num">2020</span><span class="sep"></span><span class="num">3:58</span></div>
+            </div>
+            <div class="np-actions">
+              <button class="btn btn--secondary like is-liked" aria-pressed="true"><svg class="icon"><use href="#i-heart"/></svg>Liked</button>
+              <button class="btn btn--secondary np-dl is-done" aria-label="Downloaded — open menu to remove the download"><svg class="icon"><use href="#i-check-circle"/></svg>Downloaded</button>
+              <button class="btn btn--secondary np-addpl"><svg class="icon"><use href="#i-plus"/></svg>Add to playlist</button>
+              <button class="btn btn--icon" aria-label="More: go to album, go to artist, show file, remove download"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+
+            <div class="np-cards">
+              <div class="card">
+                <div class="np-card__head"><div class="card__title"><svg class="icon icon--16 np-ic-inline"><use href="#i-moon"/></svg>Sleep timer</div><span class="np-card__value">Stops in 23:41 · ends 23:05</span></div>
+                <div class="seg seg--block" role="group" aria-label="Sleep timer, minutes">
+                  <button class="seg__btn">Off</button><button class="seg__btn" aria-label="15 minutes">15</button><button class="seg__btn is-active" aria-label="30 minutes" aria-pressed="true">30</button><button class="seg__btn is-hover" aria-label="45 minutes">45</button><button class="seg__btn">60 min</button><button class="seg__btn">End of song</button>
+                </div>
+              </div>
+              <div class="card">
+                <div class="np-card__head"><div class="card__title"><svg class="icon icon--16 np-ic-inline"><use href="#i-speaker"/></svg>Output</div><span class="t-13 muted num">Volume 70</span></div>
+                <div class="np-out">
+                  <select class="select" aria-label="Output device"><option>Built-in speakers</option><option>FiiO K3 (USB DAC)</option><option>Headphones (3.5 mm)</option></select>
+                  <div class="volume" style="--p:70%"><svg class="icon muted"><use href="#i-volume"/></svg><div class="volume__track" role="slider" aria-label="Volume" aria-valuenow="70"><i class="volume__fill"></i><i class="volume__thumb"></i></div></div>
+                </div>
+              </div>
+              <div class="card card--tint">
+                <dl class="np-facts">
+                  <dt>Status</dt><dd><svg class="icon icon--16 np-ic-inline np-src-ic--dl"><use href="#i-check"/></svg>Downloaded · plays offline</dd>
+                  <dt>File</dt><dd>M4A · 256 kbps · 7.6 MB</dd>
+                  <dt>Location</dt><dd title="~/Music/Offline Player/Glass Animals/Dreamland/03 Heat Waves.m4a">~/Music/Offline Player/Glass Animals/Dreamland/03 Heat Waves.m4a</dd>
+                  <dt>From</dt><dd><span class="badge badge--ytm badge--dot"><span class="badge__label">YouTube Music</span></span>&nbsp; downloaded 12 Oct</dd>
+                </dl>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ====== Desktop queue panel ====== -->
+        <aside class="card card--flush np-queue" aria-label="Queue">
+          <div class="np-queue__head">
+            <div><h3>Queue</h3><div class="t-13 muted num np-mt-1">23 up next · 1 h 24 min left</div><div class="np-legend t-12 muted np-mt-1"><span><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-hidden="true"><use href="#i-check"/></svg>17 downloaded</span><span><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-hidden="true"><use href="#i-stream"/></svg>6 stream</span></div></div>
+            <button class="btn btn--icon btn--sm" aria-label="Queue options: Save as playlist, Clear queue" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button>
+          </div>
+          <div class="np-queue__body">
+            <div class="group-head">Now playing</div>
+            <div class="row row--result q-row is-playing">
+              <span class="q-grip"><span class="eq"><i></i><i></i><i></i></span></span>
+              <div class="art art--1"><span>HW</span></div>
+              <div class="row__main"><div class="row__title">Heat Waves</div><div class="row__sub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals</span></div></div>
+              <div class="row__dur">3:58</div><div class="q-act"><button class="btn btn--icon btn--sm" aria-label="More for Heat Waves"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+            </div>
+
+            <div class="group-head">Added by you<span class="group-head__count">2</span><button class="btn btn--ghost btn--sm" aria-label="Clear the 2 songs added by you">Clear added</button></div>
+            <div class="row row--result q-row is-hover">
+              <span class="q-grip" aria-label="Drag to reorder"><svg class="icon icon--16"><use href="#i-grip"/></svg></span>
+              <div class="art art--3"><span>P</span></div>
+              <div class="row__main"><div class="row__title">Motion Sickness</div><div class="row__sub"><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-label="Streams — needs internet"><use href="#i-stream"/></svg><span>Phoebe Bridgers</span></div></div>
+              <div class="row__dur">3:49</div><div class="q-act"><button class="btn btn--icon btn--sm" aria-label="Remove Motion Sickness from queue"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            </div>
+            <div class="row row--result q-row">
+              <span class="q-grip" aria-label="Drag to reorder"><svg class="icon icon--16"><use href="#i-grip"/></svg></span>
+              <div class="art art--4"><span>K</span></div>
+              <div class="row__main"><div class="row__title">Maria También</div><div class="row__sub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Khruangbin</span></div></div>
+              <div class="row__dur">3:08</div><div class="q-act"><button class="btn btn--icon btn--sm" aria-label="Remove Maria También from queue"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            </div>
+
+            <div class="group-head">Next from Late drives<span class="group-head__count">21</span></div>
+            <div class="row row--result q-row">
+              <span class="q-grip" aria-label="Drag to reorder"><svg class="icon icon--16"><use href="#i-grip"/></svg></span>
+              <div class="art art--2"><span>C</span></div>
+              <div class="row__main"><div class="row__title">The Less I Know the Better</div><div class="row__sub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Tame Impala</span></div></div>
+              <div class="row__dur">3:36</div><div class="q-act"><button class="btn btn--icon btn--sm" aria-label="Remove The Less I Know the Better from queue"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            </div>
+            <div class="row row--result q-row">
+              <span class="q-grip" aria-label="Drag to reorder"><svg class="icon icon--16"><use href="#i-grip"/></svg></span>
+              <div class="art art--6"><span>AM</span></div>
+              <div class="row__main"><div class="row__title">Do I Wanna Know?</div><div class="row__sub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Arctic Monkeys</span></div></div>
+              <div class="row__dur">4:32</div><div class="q-act"><button class="btn btn--icon btn--sm" aria-label="Remove Do I Wanna Know? from queue"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            </div>
+            <div class="row row--result q-row">
+              <span class="q-grip" aria-label="Drag to reorder"><svg class="icon icon--16"><use href="#i-grip"/></svg></span>
+              <div class="art art--5"><span>FO</span></div>
+              <div class="row__main"><div class="row__title">Pink + White</div><div class="row__sub"><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-label="Streams — needs internet"><use href="#i-stream"/></svg><span>Frank Ocean</span></div></div>
+              <div class="row__dur">3:04</div><div class="q-act"><button class="btn btn--icon btn--sm" aria-label="Remove Pink + White from queue"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            </div>
+            <div class="row row--result q-row">
+              <span class="q-grip" aria-label="Drag to reorder"><svg class="icon icon--16"><use href="#i-grip"/></svg></span>
+              <div class="art art--4"><span>FM</span></div>
+              <div class="row__main"><div class="row__title">Dreams</div><div class="row__sub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Fleetwood Mac</span></div></div>
+              <div class="row__dur">4:17</div><div class="q-act"><button class="btn btn--icon btn--sm" aria-label="Remove Dreams from queue"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            </div>
+            <div class="row row--result q-row">
+              <span class="q-grip" aria-label="Drag to reorder"><svg class="icon icon--16"><use href="#i-grip"/></svg></span>
+              <div class="art art--5"><span>B</span></div>
+              <div class="row__main"><div class="row__title">Holocene</div><div class="row__sub"><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-label="Streams — needs internet"><use href="#i-stream"/></svg><span>Bon Iver</span></div></div>
+              <div class="row__dur">5:36</div><div class="q-act"><button class="btn btn--icon btn--sm" aria-label="Remove Holocene from queue"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            </div>
+            <div class="row row--result q-row">
+              <span class="q-grip" aria-label="Drag to reorder"><svg class="icon icon--16"><use href="#i-grip"/></svg></span>
+              <div class="art art--3"><span>R</span></div>
+              <div class="row__main"><div class="row__title">Nights</div><div class="row__sub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Frank Ocean</span></div></div>
+              <div class="row__dur">5:07</div><div class="q-act"><button class="btn btn--icon btn--sm" aria-label="Remove Nights from queue"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            </div>
+            <div class="np-queue__foot"><span>15 more · 1 h 2 min</span><button class="btn btn--ghost btn--sm">Show all</button></div>
+          </div>
+        </aside>
+
+        <!-- ====== Phone full player sheet ====== -->
+        <section class="np-phone" aria-label="Now playing">
+          <div class="art art--hero art--1" role="img" aria-label="Artwork: Dreamland by Glass Animals">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+              <circle cx="68" cy="34" r="20" fill="currentColor" fill-opacity=".22"/>
+              <circle cx="68" cy="34" r="12" fill="currentColor" fill-opacity=".28"/>
+              <path d="M0 62 Q12 54 25 62 T50 62 T75 62 T100 62 V100 H0Z" fill="currentColor" fill-opacity=".10"/>
+              <path d="M0 72 Q12 64 25 72 T50 72 T75 72 T100 72 V100 H0Z" fill="currentColor" fill-opacity=".12"/>
+              <path d="M0 82 Q12 74 25 82 T50 82 T75 82 T100 82 V100 H0Z" fill="currentColor" fill-opacity=".14"/>
+            </svg>
+            <span class="np-art__tag">Dreamland</span>
+          </div>
+          <div class="np-titlerow">
+            <div class="grow">
+              <div class="np-titlerow__title truncate">Heat Waves</div>
+              <div class="np-titlerow__sub truncate">Glass Animals · Dreamland</div>
+              <span class="badge badge--ok np-src np-mt-2"><svg class="icon"><use href="#i-check"/></svg>Downloaded</span>
+            </div>
+            <button class="btn btn--icon np-dl-ic is-done" aria-label="Downloaded — tap to manage"><svg class="icon icon--24"><use href="#i-check-circle"/></svg></button>
+            <button class="btn btn--icon like is-liked" aria-label="Liked" aria-pressed="true"><svg class="icon icon--24"><use href="#i-heart"/></svg></button>
+          </div>
+          <div class="scrubber scrubber--lg np-scrub" style="--p:35%;--b:100%">
+            <div class="scrubber__track" role="slider" aria-label="Seek" aria-valuetext="1:24 of 3:58"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div>
+            <div class="scrubber__times"><span>1:24</span><span>-2:34</span></div>
+          </div>
+          <div class="np-transport">
+            <button class="btn btn--icon is-on" aria-label="Shuffle on" aria-pressed="true"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+            <button class="btn btn--icon btn--lg np-skipbtn" aria-label="Previous"><svg class="icon np-skip-ic"><use href="#i-skip-prev"/></svg></button>
+            <button class="btn btn--play btn--lg np-play--accent" aria-label="Pause"><svg class="icon icon--28"><use href="#i-pause"/></svg></button>
+            <button class="btn btn--icon btn--lg np-skipbtn" aria-label="Next"><svg class="icon np-skip-ic"><use href="#i-skip-next"/></svg></button>
+            <button class="btn btn--icon" aria-label="Repeat off" aria-pressed="false"><svg class="icon"><use href="#i-repeat"/></svg></button>
+          </div>
+          <div class="np-util">
+            <button class="np-util__btn is-on" aria-label="Sleep timer: stops in 23 minutes 41 seconds"><svg class="icon"><use href="#i-moon"/></svg><span class="num">Sleep · 23:41</span></button>
+            <button class="np-util__btn" aria-label="Output: Phone speaker, change"><svg class="icon"><use href="#i-speaker"/></svg><span>Phone speaker<svg class="icon icon--16 np-util__chev"><use href="#i-chevron-down"/></svg></span></button>
+            <button class="np-util__btn" aria-label="Add Heat Waves to a playlist"><svg class="icon"><use href="#i-plus"/></svg><span>Add to playlist</span></button>
+          </div>
+          <button class="np-peek" aria-label="Open queue: 23 up next">
+            <span class="eyebrow">Up next</span>
+            <div class="art art--3"><span>P</span></div>
+            <span class="np-peek__main"><span class="strong truncate">Motion Sickness</span><span class="t-13 muted truncate">Phoebe Bridgers</span></span>
+            <span class="np-peek__count" aria-label="then 22 more">+22</span>
+            <svg class="icon muted"><use href="#i-queue"/></svg>
+          </button>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Desktop player bar: the "now" block is highlighted — it is this screen's entry and collapse control -->
+  <footer class="player-bar">
+    <div class="player-bar__now">
+      <a class="player-bar__now np-now is-current" href="#" aria-current="page" aria-label="Now playing — collapse">
+        <div class="art art--1"><span>HW</span></div>
+        <div class="player-bar__meta"><div class="player-bar__title truncate">Heat Waves</div><div class="player-bar__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · Dreamland</span></div></div>
+        <svg class="icon icon--16 np-now__chev"><use href="#i-chevron-down"/></svg>
+      </a>
+      <button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button>
+    </div>
+    <div class="player-bar__center np-bar-center">
+      <div class="np-bar-next t-13 muted"><span class="eyebrow">Up next</span><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-label="Streams — needs internet"><use href="#i-stream"/></svg><span class="truncate"><span class="strong np-text">Motion Sickness</span> · Phoebe Bridgers</span></div>
+      <div class="transport">
+        <button class="btn btn--icon is-on" aria-label="Shuffle on (S)"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+        <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-skip-prev"/></svg></button>
+        <button class="btn btn--play" aria-label="Pause (Space)"><svg class="icon icon--20"><use href="#i-pause"/></svg></button>
+        <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-skip-next"/></svg></button>
+        <button class="btn btn--icon" aria-label="Repeat off (R)"><svg class="icon"><use href="#i-repeat"/></svg></button>
+      </div>
+      <div class="scrubber scrubber--inline is-hover" style="--p:35%;--b:100%">
+        <div class="scrubber__times"><span>1:24</span></div>
+        <div class="scrubber__track" role="slider" aria-label="Seek" aria-valuetext="1:24 of 3:58"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div>
+        <div class="scrubber__times"><span>-2:34</span></div>
+      </div>
+    </div>
+    <div class="player-bar__right">
+      <button class="btn btn--icon is-on" aria-label="Queue (open)" aria-pressed="true"><svg class="icon"><use href="#i-queue"/></svg></button>
+      <button class="np-timer" aria-label="Sleep timer: stops in 23 minutes 41 seconds"><svg class="icon icon--16"><use href="#i-moon"/></svg>23:41</button>
+      <button class="btn btn--icon" aria-label="Output: Built-in speakers"><svg class="icon"><use href="#i-speaker"/></svg></button>
+      <div class="volume" style="--p:70%"><svg class="icon muted"><use href="#i-volume"/></svg><div class="volume__track" role="slider" aria-label="Volume" aria-valuenow="70"><i class="volume__fill"></i><i class="volume__thumb"></i></div></div>
+    </div>
+  </footer>
+
+  <!-- Phone chrome: hidden while the Now Playing sheet is open (shown collapsed in the states below) -->
+  <div class="mini-player" role="button" tabindex="0" aria-label="Open Now Playing">
+    <div class="mini-player__progress" style="--p:35%"><i></i></div>
+    <div class="art art--1"><span>HW</span></div>
+    <div class="mini-player__meta"><div class="mini-player__title truncate">Heat Waves</div><div class="mini-player__sub num"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · 1:24 / 3:58</span></div></div>
+    <button class="btn btn--icon np-mini-play" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+    <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-skip-next"/></svg></button>
+  </div>
+  <nav class="tabbar" aria-label="Primary">
+    <a class="tabbar__item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+    <a class="tabbar__item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+    <a class="tabbar__item is-active" href="library.html" aria-current="page"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+    <a class="tabbar__item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="tab-count" aria-label="3 active downloads">3</span></a>
+  </nav>
+</div>
+
+<!-- ================================================================ STATE VARIANTS -->
+<div class="states">
+  <div class="states__intro">
+    <div class="eyebrow">Now Playing — state variants</div>
+    <p class="muted">Each block is the Now Playing content in that state. Shell (sidebar, nav) is unchanged and omitted.</p>
+  </div>
+
+  <!-- Collapsed / mini -->
+  <section class="state">
+    <div class="state__label"><h4>Collapsed — player bar &amp; mini player</h4><p>How every other screen shows the current song. Clicking the highlighted block (desktop) or tapping the mini player (phone) opens Now Playing. Shown paused at 1:24.</p></div>
+    <div class="state__frame">
+      <div class="state__pad">
+        <div class="desktop-only">
+          <div class="eyebrow state-pair__label">Desktop · player bar</div>
+          <div class="collapsed card card--flush">
+            <footer class="player-bar">
+              <div class="player-bar__now">
+                <a class="player-bar__now np-now" href="#" aria-label="Open Now Playing">
+                  <div class="art art--1"><span>HW</span></div>
+                  <div class="player-bar__meta"><div class="player-bar__title truncate">Heat Waves</div><div class="player-bar__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · Dreamland</span></div></div>
+                  <svg class="icon icon--16 faint"><use href="#i-chevron-up"/></svg>
+                </a>
+                <button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button>
+              </div>
+              <div class="player-bar__center">
+                <div class="transport">
+                  <button class="btn btn--icon is-on" aria-label="Shuffle on"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+                  <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-skip-prev"/></svg></button>
+                  <button class="btn btn--play" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+                  <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-skip-next"/></svg></button>
+                  <button class="btn btn--icon" aria-label="Repeat off"><svg class="icon"><use href="#i-repeat"/></svg></button>
+                </div>
+                <div class="scrubber scrubber--inline" style="--p:35%;--b:100%"><div class="scrubber__times"><span>1:24</span></div><div class="scrubber__track"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div><div class="scrubber__times"><span>-2:34</span></div></div>
+              </div>
+              <div class="player-bar__right">
+                <button class="btn btn--icon" aria-label="Queue"><svg class="icon"><use href="#i-queue"/></svg></button>
+                <button class="np-timer" aria-label="Sleep timer"><svg class="icon icon--16"><use href="#i-moon"/></svg>23:41</button>
+                <button class="btn btn--icon" aria-label="Output"><svg class="icon"><use href="#i-speaker"/></svg></button>
+                <div class="volume" style="--p:70%"><svg class="icon muted"><use href="#i-volume"/></svg><div class="volume__track"><i class="volume__fill"></i><i class="volume__thumb"></i></div></div>
+              </div>
+            </footer>
+          </div>
+        </div>
+        <div>
+          <div class="eyebrow state-pair__label">Phone · mini player docked above the tab bar</div>
+          <div class="phone-strip">
+            <div class="mini-player" role="button" tabindex="0" aria-label="Open Now Playing">
+              <div class="mini-player__progress" style="--p:35%"><i></i></div>
+              <div class="art art--1"><span>HW</span></div>
+              <div class="mini-player__meta"><div class="mini-player__title truncate">Heat Waves</div><div class="mini-player__sub num"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · 1:24 / 3:58</span></div></div>
+              <button class="btn btn--icon np-mini-play" aria-label="Play (paused at 1:24)"><svg class="icon icon--fill"><use href="#i-play"/></svg></button>
+              <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-skip-next"/></svg></button>
+            </div>
+            <nav class="tabbar" aria-label="Primary">
+              <a class="tabbar__item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+              <a class="tabbar__item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+              <a class="tabbar__item is-active" href="library.html" aria-current="page"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+              <a class="tabbar__item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="tab-count" aria-label="3 active downloads">3</span></a>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Streaming + buffering -->
+  <section class="state">
+    <div class="state__label"><h4>Streaming — buffering</h4><p>A YouTube Music song that isn’t downloaded. Audio arrives in chunks: the gray segment ahead of the red fill is what’s already cached. If playback catches up with it, the thumb becomes a spinner, “Buffering… 72%” replaces the remaining time and the play button shows a ring. The cached chunks are deleted after the song ends.</p></div>
+    <div class="state__frame">
+      <div class="state__pad">
+        <div class="np-stream">
+          <!-- Desktop -->
+          <div class="np-stream__desk">
+            <div class="eyebrow state-pair__label">Desktop · streaming, buffer ahead → playhead at the buffer edge</div>
+            <div class="np-smock">
+              <div class="art art--hero art--3" role="img" aria-label="Artwork: Stranger in the Alps by Phoebe Bridgers"><svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><circle cx="30" cy="30" r="22" fill="currentColor" fill-opacity=".18"/><circle cx="70" cy="68" r="30" fill="currentColor" fill-opacity=".14"/><path d="M0 78 L30 60 L55 74 L100 50 V100 H0Z" fill="currentColor" fill-opacity=".14"/></svg><span class="np-art__tag">Stranger in the Alps</span></div>
+              <div class="np-smock__body">
+                <div>
+                  <div class="np-eyerow"><span class="eyebrow">Song · 4 of 24 in Late drives</span><span class="badge np-src np-src--st"><svg class="icon"><use href="#i-stream"/></svg>Streaming</span></div>
+                  <div class="np-titlerow__title np-titlerow__title--lg">Motion Sickness</div>
+                  <div class="np-sub np-sub--sm"><a href="#">Phoebe Bridgers</a><span class="sep"></span><a href="#">Stranger in the Alps</a><span class="sep"></span><span class="num">2017</span><span class="sep"></span><span class="num">3:49</span></div>
+                </div>
+                <div class="np-actions">
+                  <button class="btn btn--secondary like" aria-pressed="false"><svg class="icon"><use href="#i-heart"/></svg>Like</button>
+                  <button class="btn btn--secondary np-dl is-busy" style="--p:42%" aria-label="Downloading, 42 percent. Click to cancel"><span class="spinner"></span><span class="num">Downloading 42%</span></button>
+                  <button class="btn btn--secondary np-addpl"><svg class="icon"><use href="#i-plus"/></svg>Add to playlist</button>
+                </div>
+                <div class="np-bufrows">
+                  <div class="np-bufrow">
+                    <span class="t-12 faint np-bufrow__tag">Playing</span>
+                    <div class="scrubber scrubber--inline np-scrub-in" style="--p:38%;--b:60%"><div class="scrubber__times"><span>1:27</span></div><div class="scrubber__track" role="slider" aria-label="Seek" aria-valuetext="1:27 of 3:49, cached to 2:17"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div><div class="scrubber__times"><span>-2:22</span></div></div>
+                    <button class="btn btn--play np-play--accent" aria-label="Pause"><svg class="icon icon--20"><use href="#i-pause"/></svg></button>
+                  </div>
+                  <div class="np-bufrow">
+                    <span class="t-12 faint np-bufrow__tag">Stalled</span>
+                    <div class="scrubber scrubber--inline np-scrub-in" style="--p:60%;--b:60%"><div class="scrubber__times"><span>2:17</span></div><div class="scrubber__track" role="slider" aria-label="Seek" aria-valuetext="2:17 of 3:49, buffering"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb np-thumb--spin"></i></div><div class="scrubber__times"><span class="np-buftext" role="status">Buffering… 72%</span></div></div>
+                    <button class="btn btn--play np-play--accent np-play--buffer" aria-label="Buffering — pause"><svg class="icon icon--20"><use href="#i-pause"/></svg></button>
+                  </div>
+                </div>
+                <div class="card card--tint">
+                  <dl class="np-facts">
+                    <dt>Status</dt><dd><svg class="icon icon--16 np-src-ic np-ic-inline np-src-ic--st" aria-label="Streaming"><use href="#i-stream"/></svg>Streaming from YouTube Music · 160 kbps</dd>
+                    <dt>Cache</dt><dd>cached 3.1 MB, cleared after play</dd>
+                    <dt>Keep it</dt><dd>Downloading to ~/Music/Offline Player · 3.4 of 8.1 MB</dd>
+                  </dl>
+                </div>
+              </div>
+            </div>
+            <div class="np-dlstates">
+              <span class="eyebrow">Download button</span>
+              <button class="btn btn--secondary btn--sm np-dl"><svg class="icon"><use href="#i-download"/></svg>Download</button>
+              <button class="btn btn--secondary btn--sm np-dl is-busy" style="--p:42%"><span class="spinner"></span><span class="num">Downloading 42%</span></button>
+              <button class="btn btn--secondary btn--sm np-dl is-done"><svg class="icon"><use href="#i-check-circle"/></svg>Downloaded</button>
+            </div>
+          </div>
+          <!-- Phone -->
+          <div class="np-stream__phone">
+            <div class="eyebrow state-pair__label">Phone · stalled at the buffer edge</div>
+            <div class="phone-strip np-pstrip">
+              <div class="np-titlerow">
+                <div class="grow">
+                  <div class="np-titlerow__title truncate">Motion Sickness</div>
+                  <div class="np-titlerow__sub truncate">Phoebe Bridgers · Stranger in the Alps</div>
+                  <span class="badge np-src np-src--st np-mt-2"><svg class="icon"><use href="#i-stream"/></svg>Streaming</span>
+                </div>
+                <button class="btn btn--icon np-dl-ic is-busy" aria-label="Downloading, 42 percent"><span class="ring-wrap"><svg class="ring ring--sm" viewBox="0 0 36 36"><circle class="ring__bg" cx="18" cy="18" r="15.5"/><circle class="ring__fg" cx="18" cy="18" r="15.5" pathLength="100" style="--p:42"/></svg></span></button>
+                <button class="btn btn--icon like" aria-label="Like" aria-pressed="false"><svg class="icon icon--24"><use href="#i-heart"/></svg></button>
+              </div>
+              <div class="scrubber scrubber--lg np-scrub" style="--p:60%;--b:60%">
+                <div class="scrubber__track" role="slider" aria-label="Seek" aria-valuetext="2:17 of 3:49, buffering"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb np-thumb--spin"></i></div>
+                <div class="scrubber__times"><span>2:17</span><span class="np-buftext" role="status">Buffering… 72%</span></div>
+              </div>
+              <div class="np-transport">
+                <button class="btn btn--icon is-on" aria-label="Shuffle on" aria-pressed="true"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+                <button class="btn btn--icon btn--lg np-skipbtn" aria-label="Previous"><svg class="icon np-skip-ic"><use href="#i-skip-prev"/></svg></button>
+                <button class="btn btn--play btn--lg np-play--accent np-play--buffer" aria-label="Buffering — pause"><svg class="icon icon--28"><use href="#i-pause"/></svg></button>
+                <button class="btn btn--icon btn--lg np-skipbtn" aria-label="Next"><svg class="icon np-skip-ic"><use href="#i-skip-next"/></svg></button>
+                <button class="btn btn--icon" aria-label="Repeat off" aria-pressed="false"><svg class="icon"><use href="#i-repeat"/></svg></button>
+              </div>
+              <div class="mini-player np-strip-mini" aria-label="Same song, collapsed">
+                <div class="mini-player__progress" style="--p:60%"><i></i></div>
+                <div class="art art--3"><span>P</span></div>
+                <div class="mini-player__meta"><div class="mini-player__title truncate">Motion Sickness</div><div class="mini-player__sub np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-label="Streaming"><use href="#i-stream"/></svg><span class="np-mini__time">Buffering… 72%</span><span class="truncate">· Phoebe Bridgers</span></div></div>
+                <button class="btn btn--icon np-mini-play" aria-label="Buffering — pause"><span class="spinner"></span></button>
+                <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-skip-next"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Voice recording -->
+  <section class="state">
+    <div class="state__label"><h4>Voice recording playing — speed control</h4><p>Voice items never enter music shuffle, so shuffle/repeat give way to skip back / forward 15 s. Speed is per recording (default from Settings). Waveform doubles as the scrubber.</p></div>
+    <div class="state__frame">
+      <div class="state__pad">
+        <div class="np-voice">
+          <div class="art art--hero art--voice" role="img" aria-label="Voice recording">
+            <svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="30" fill="currentColor" fill-opacity=".12"/><circle cx="50" cy="50" r="20" fill="currentColor" fill-opacity=".14"/></svg>
+            <svg class="icon np-voice__mic"><use href="#i-mic"/></svg>
+          </div>
+          <div class="np-voice__ctrl">
+            <div>
+              <div class="cluster"><span class="badge badge--voice badge--dot"><span class="badge__label">Voice recording</span></span><span class="t-13 muted">Recorded today · 09:14 · 18.3 MB</span></div>
+              <div class="np-titlerow__title np-titlerow__title--lg">Standup notes — 14 Oct</div>
+            </div>
+            <div class="wave-wrap"><div class="wave wave--lg wave--voice" data-bars="96" data-seed="7" data-played="33" style="--p:33%" role="slider" aria-label="Seek" aria-valuetext="4:12 of 12:41"><i class="wave__cursor"></i></div></div>
+            <div class="scrubber__times np-voice__times"><span>4:12</span><span>-5:39 at 1.5× · 8:29 at 1×</span></div>
+            <div class="np-transport">
+              <button class="btn btn--icon np-skip" aria-label="Back 15 seconds"><svg class="icon icon--24"><use href="#i-back"/></svg><b>15</b></button>
+              <button class="btn btn--icon btn--lg np-skipbtn" aria-label="Previous recording"><svg class="icon np-skip-ic"><use href="#i-skip-prev"/></svg></button>
+              <button class="btn btn--play btn--lg np-play--accent" aria-label="Pause"><svg class="icon icon--28"><use href="#i-pause"/></svg></button>
+              <button class="btn btn--icon btn--lg np-skipbtn" aria-label="Next recording"><svg class="icon np-skip-ic"><use href="#i-skip-next"/></svg></button>
+              <button class="btn btn--icon np-skip" aria-label="Forward 15 seconds"><svg class="icon icon--24"><use href="#i-fwd"/></svg><b>15</b></button>
+            </div>
+            <div class="np-voice__speed">
+              <span class="label"><svg class="icon icon--16 np-ic-inline"><use href="#i-speed"/></svg>Speed</span>
+              <div class="seg" role="group" aria-label="Playback speed"><button class="seg__btn">0.75×</button><button class="seg__btn">1×</button><button class="seg__btn">1.25×</button><button class="seg__btn is-active">1.5×</button><button class="seg__btn">2×</button></div>
+              <button class="btn btn--ghost btn--sm" aria-label="Sleep timer: off"><svg class="icon"><use href="#i-moon"/></svg>Sleep timer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Queue sheet + queue menu + sleep timer picker -->
+  <section class="state">
+    <div class="state__label"><h4>Phone queue sheet · queue menu · sleep timer picker</h4><p>Phone opens the queue as a bottom sheet over the player (drag handles reorder, ✕ removes one song). “Clear added” only empties the songs you queued; “Clear queue” is destructive and lives in the ⋯ menu. The sleep timer offers the same choices everywhere: Off · 15 · 30 · 45 · 60 min · End of song.</p></div>
+    <div class="state__frame">
+      <div class="state__pad">
+        <div class="state-trio">
+          <div>
+            <div class="eyebrow state-pair__label">Queue · phone sheet</div>
+            <div class="sheet-preview">
+              <div class="sheet" role="dialog" aria-label="Queue">
+                <div class="sheet__grab"></div>
+                <div class="between"><div><div class="sheet__title">Queue</div><div class="t-13 muted num">23 up next · 1 h 24 min left</div></div><button class="btn btn--icon" aria-label="Queue options: Save as playlist, Clear queue" aria-haspopup="menu"><svg class="icon"><use href="#i-more"/></svg></button></div>
+                <div class="list">
+                  <div class="group-head">Added by you<span class="group-head__count">2</span><button class="btn btn--ghost btn--sm" aria-label="Clear the 2 songs added by you">Clear added</button></div>
+                  <div class="row row--result"><div class="art art--3"><span>P</span></div><div class="row__main"><div class="row__title">Motion Sickness</div><div class="row__sub np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-label="Streams — needs internet"><use href="#i-stream"/></svg><span>Phoebe Bridgers</span></div></div><div class="row__dur">3:49</div><div class="row__actions"><button class="btn btn--icon" aria-label="Remove Motion Sickness from queue"><svg class="icon"><use href="#i-x"/></svg></button><button class="btn btn--icon" aria-label="Drag to reorder"><svg class="icon"><use href="#i-grip"/></svg></button></div></div>
+                  <div class="row row--result"><div class="art art--4"><span>K</span></div><div class="row__main"><div class="row__title">Maria También</div><div class="row__sub np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Khruangbin</span></div></div><div class="row__dur">3:08</div><div class="row__actions"><button class="btn btn--icon" aria-label="Remove Maria También from queue"><svg class="icon"><use href="#i-x"/></svg></button><button class="btn btn--icon" aria-label="Drag to reorder"><svg class="icon"><use href="#i-grip"/></svg></button></div></div>
+                  <div class="group-head">Next from Late drives<span class="group-head__count">21</span></div>
+                  <div class="row row--result"><div class="art art--2"><span>C</span></div><div class="row__main"><div class="row__title">The Less I Know the Better</div><div class="row__sub np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Tame Impala</span></div></div><div class="row__dur">3:36</div><div class="row__actions"><button class="btn btn--icon" aria-label="Remove The Less I Know the Better from queue"><svg class="icon"><use href="#i-x"/></svg></button><button class="btn btn--icon" aria-label="Drag to reorder"><svg class="icon"><use href="#i-grip"/></svg></button></div></div>
+                  <div class="row row--result"><div class="art art--6"><span>AM</span></div><div class="row__main"><div class="row__title">Do I Wanna Know?</div><div class="row__sub np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Arctic Monkeys</span></div></div><div class="row__dur">4:32</div><div class="row__actions"><button class="btn btn--icon" aria-label="Remove Do I Wanna Know? from queue"><svg class="icon"><use href="#i-x"/></svg></button><button class="btn btn--icon" aria-label="Drag to reorder"><svg class="icon"><use href="#i-grip"/></svg></button></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="eyebrow state-pair__label">Queue · ⋯ menu</div>
+            <div class="menu menu--queue" role="menu" aria-label="Queue options">
+              <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-playlist"/></svg>Save queue as playlist<span class="menu__hint">24 songs</span></button>
+              <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-shuffle"/></svg>Shuffle up next</button>
+              <div class="menu__sep"></div>
+              <button class="menu__item menu__item--danger is-hover" role="menuitem"><svg class="icon"><use href="#i-trash"/></svg>Clear queue<span class="menu__hint">23 songs</span></button>
+            </div>
+          </div>
+          <div>
+            <div class="eyebrow state-pair__label">Sleep timer · picker</div>
+            <div class="menu menu--timer" role="menu" aria-label="Sleep timer">
+              <div class="menu__head"><span class="strong">Sleep timer</span><span class="np-card__value">Stops in 23:41 · ends 23:05</span></div>
+              <div class="menu__sep"></div>
+              <button class="menu__item" role="menuitemradio" aria-checked="false">Off</button>
+              <button class="menu__item" role="menuitemradio" aria-checked="false">15 min<span class="menu__hint">ends 22:56</span></button>
+              <button class="menu__item is-checked" role="menuitemradio" aria-checked="true">30 min<span class="menu__hint">ends 23:05</span><svg class="icon"><use href="#i-check"/></svg></button>
+              <button class="menu__item is-hover" role="menuitemradio" aria-checked="false">45 min<span class="menu__hint">ends 23:26</span></button>
+              <button class="menu__item" role="menuitemradio" aria-checked="false">60 min<span class="menu__hint">ends 23:41</span></button>
+              <button class="menu__item" role="menuitemradio" aria-checked="false">End of song<span class="menu__hint">in 2:34</span></button>
+              <div class="menu__sep"></div>
+              <button class="menu__item"><svg class="icon"><use href="#i-plus"/></svg>Add 10 minutes<span class="menu__hint">ends 23:15</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Add to playlist -->
+  <section class="state" data-state="add-to-playlist">
+    <div class="state__label"><h4>Add to playlist — picker</h4><p>Opened from “Add to playlist” (desktop popover under the button, phone bottom sheet). A check marks playlists that already contain the song; tapping a row toggles it and a toast confirms with Undo. “New playlist…” creates one with this song in it. Streaming songs can be added too — they stay streamable until downloaded.</p></div>
+    <div class="state__frame">
+      <div class="state__pad">
+        <div class="state-pair">
+          <div class="desktop-only">
+            <div class="eyebrow state-pair__label">Desktop · popover</div>
+            <div class="menu menu--pl" role="menu" aria-label="Add Heat Waves to playlist">
+              <div class="menu__head"><span class="strong">Add “Heat Waves” to</span><span class="t-12 muted num">In 1 of 4</span></div>
+              <div class="np-pl-search"><div class="input-wrap"><svg class="icon icon--16"><use href="#i-search"/></svg><input class="input input--with-icon" placeholder="Find a playlist" aria-label="Find a playlist"></div></div>
+                <button class="menu__item np-pl-new" role="menuitem"><svg class="icon"><use href="#i-plus"/></svg>New playlist…</button>
+                <div class="menu__sep"></div>
+                <button class="menu__item is-checked" role="menuitemcheckbox" aria-checked="true"><span class="art art--1"><span>LD</span></span>Late drives<span class="menu__hint">24 songs</span><svg class="icon np-pl-check"><use href="#i-check"/></svg></button>
+                <button class="menu__item is-hover" role="menuitemcheckbox" aria-checked="false"><span class="art art--3"><span>G</span></span>Gym 2026<span class="menu__hint">18 songs</span></button>
+                <button class="menu__item" role="menuitemcheckbox" aria-checked="false"><span class="art art--2"><span>F</span></span>Focus — no vocals<span class="menu__hint">41 songs</span></button>
+                <button class="menu__item" role="menuitemcheckbox" aria-checked="false"><span class="art art--4"><span>SM</span></span>Sunday morning<span class="menu__hint">12 songs</span></button>
+                <div class="np-pl-foot">Liked songs is updated with ♥, not from this list.</div>
+            </div>
+          </div>
+          <div>
+            <div class="eyebrow state-pair__label">Phone · sheet, then confirmation</div>
+            <div class="sheet-preview">
+              <div class="sheet" role="dialog" aria-label="Add Heat Waves to playlist">
+                <div class="sheet__grab"></div>
+                <div class="between"><div><div class="sheet__title">Add to playlist</div><div class="t-13 muted">Heat Waves · in 1 of 4 playlists</div></div></div>
+                <div class="menu menu--pl" role="menu">
+                <div class="np-pl-search"><div class="input-wrap"><svg class="icon icon--16"><use href="#i-search"/></svg><input class="input input--with-icon" placeholder="Find a playlist" aria-label="Find a playlist"></div></div>
+                <button class="menu__item np-pl-new" role="menuitem"><svg class="icon"><use href="#i-plus"/></svg>New playlist…</button>
+                <div class="menu__sep"></div>
+                <button class="menu__item is-checked" role="menuitemcheckbox" aria-checked="true"><span class="art art--1"><span>LD</span></span>Late drives<span class="menu__hint">24 songs</span><svg class="icon np-pl-check"><use href="#i-check"/></svg></button>
+                <button class="menu__item" role="menuitemcheckbox" aria-checked="false"><span class="art art--3"><span>G</span></span>Gym 2026<span class="menu__hint">18 songs</span></button>
+                <button class="menu__item" role="menuitemcheckbox" aria-checked="false"><span class="art art--2"><span>F</span></span>Focus — no vocals<span class="menu__hint">41 songs</span></button>
+                <button class="menu__item" role="menuitemcheckbox" aria-checked="false"><span class="art art--4"><span>SM</span></span>Sunday morning<span class="menu__hint">12 songs</span></button>
+                <div class="np-pl-foot">Liked songs is updated with ♥, not from this list.</div>
+                </div>
+              </div>
+            </div>
+            <div class="toast toast--ok np-mt-2 np-pl-toast" role="status"><svg class="icon"><use href="#i-check"/></svg><div class="toast__text">Added to Gym 2026</div><button class="btn btn--sm btn--ghost">Undo</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Loading -->
+  <section class="state" data-state="loading">
+    <div class="state__label"><h4>Loading — opening a file · starting a stream</h4><p>Disk: shown only if reading takes longer than 300 ms (large FLAC on SD card); title is known from the library index, artwork and duration fill in. Stream: title and artwork come from the search result instantly; playback starts once the first chunk (about 8 s of audio) is cached.</p></div>
+    <div class="state__frame">
+      <div class="state__pad">
+        <div>
+        <div class="eyebrow state-pair__label">Downloaded / device file · reading from disk</div>
+        <div class="skel-hero">
+          <i class="skel skel--tile"></i>
+          <div class="stack">
+            <div><div class="eyebrow">Opening</div><div class="np-titlerow__title np-titlerow__title--lg">Holocene</div><div class="np-sub np-sub--sm">Bon Iver<span class="sep"></span>Bon Iver, Bon Iver</div></div>
+            <div class="progress-line"><div class="progress-line__meta"><span><strong>Reading file</strong> from SD card</span><span>21.4 of 38.2 MB · 56%</span></div><div class="progress" style="--p:56%"><i></i></div></div>
+            <div class="skel-deck" aria-hidden="true">
+              <div class="skel-deck__bar"><i class="skel"></i></div>
+              <div class="scrubber__times"><span>0:00</span><span>--:--</span></div>
+              <div class="skel-deck__row"><i class="skel skel--circle"></i><i class="skel skel--circle skel-deck__48"></i><i class="skel-deck__play"></i><i class="skel skel--circle skel-deck__48"></i><i class="skel skel--circle"></i></div>
+            </div>
+          </div>
+        </div>
+        </div>
+        <div>
+        <div class="divider"></div>
+        <div>
+        <div class="eyebrow state-pair__label">Streaming · fetching the first chunk</div>
+        <div class="skel-hero">
+          <div class="art art--hero art--5" role="img" aria-label="Artwork: Bon Iver by Bon Iver"><svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><circle cx="50" cy="40" r="26" fill="currentColor" fill-opacity=".16"/><path d="M0 76 L25 58 L50 70 L75 52 L100 64 V100 H0Z" fill="currentColor" fill-opacity=".14"/></svg></div>
+          <div class="stack">
+            <div><div class="np-eyerow"><span class="eyebrow">Starting stream</span><span class="badge np-src np-src--st"><svg class="icon"><use href="#i-stream"/></svg>Streaming</span></div><div class="np-titlerow__title np-titlerow__title--lg">Skinny Love</div><div class="np-sub np-sub--sm">Bon Iver<span class="sep"></span>For Emma, Forever Ago<span class="sep"></span><span class="num">3:58</span></div></div>
+            <div class="progress-line"><div class="progress-line__meta"><span><strong>Buffering</strong> from YouTube Music</span><span>0.7 of 1.2 MB · 58%</span></div><div class="progress" style="--p:58%"><i></i></div></div>
+            <div class="np-bufrow">
+              <span class="t-12 faint np-bufrow__tag">Waiting</span>
+              <div class="scrubber scrubber--inline" style="--p:0%;--b:6%"><div class="scrubber__times"><span>0:00</span></div><div class="scrubber__track" role="slider" aria-label="Seek" aria-valuetext="0:00 of 3:58, buffering"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb np-thumb--spin"></i></div><div class="scrubber__times"><span class="np-buftext" role="status">Buffering… 58%</span></div></div>
+              <button class="btn btn--play np-play--accent np-play--buffer" aria-label="Buffering — cancel"><svg class="icon icon--20"><use href="#i-pause"/></svg></button>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Offline -->
+  <section class="state" data-state="offline">
+    <div class="state__label"><h4>Offline — downloaded songs keep playing</h4><p>No network: the indicator stays “Downloaded”, Download and streaming rows are disabled with the reason, and the queue skips streaming songs instead of stopping. Everything returns when the connection does.</p></div>
+    <div class="state__frame">
+      <div class="state__pad">
+        <div class="banner banner--info"><svg class="icon"><use href="#i-offline"/></svg><div class="banner__body"><div class="banner__title">You’re offline — playing downloads only</div><div class="banner__text">6 streaming songs in the queue will be skipped until you reconnect. Liking and adding to playlists still work.</div></div></div>
+        <div class="state-pair">
+          <div class="np-smock">
+            <div class="art art--hero art--1" role="img" aria-label="Artwork: Dreamland by Glass Animals"><svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><circle cx="68" cy="34" r="20" fill="currentColor" fill-opacity=".22"/><path d="M0 72 Q12 64 25 72 T50 72 T75 72 T100 72 V100 H0Z" fill="currentColor" fill-opacity=".12"/></svg></div>
+            <div class="np-smock__body">
+              <div><div class="np-eyerow"><span class="badge badge--ok np-src"><svg class="icon"><use href="#i-check"/></svg>Downloaded</span></div><div class="np-titlerow__title np-titlerow__title--lg">Heat Waves</div><div class="np-sub np-sub--sm">Glass Animals<span class="sep"></span>Dreamland</div></div>
+              <div class="np-actions">
+                <button class="btn btn--secondary like is-liked" aria-pressed="true"><svg class="icon"><use href="#i-heart"/></svg>Liked</button>
+                <button class="btn btn--secondary np-addpl"><svg class="icon"><use href="#i-plus"/></svg>Add to playlist</button>
+              </div>
+            </div>
+          </div>
+          <div class="card card--flush np-off">
+            <div class="np-queue__head"><div><h3>Up next</h3><div class="t-13 muted num np-mt-1">17 playable offline · 6 skipped</div></div></div>
+            <div class="list">
+              <div class="row row--result q-row is-disabled"><div class="art art--3"><span>P</span></div><div class="row__main"><div class="row__title">Motion Sickness</div><div class="row__sub np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-hidden="true"><use href="#i-stream"/></svg><span>Phoebe Bridgers</span></div></div><span class="np-off-tag">Needs internet</span></div>
+              <div class="row row--result q-row"><div class="art art--4"><span>K</span></div><div class="row__main"><div class="row__title">Maria También</div><div class="row__sub np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Khruangbin</span></div></div><div class="row__dur">3:08</div></div>
+              <div class="row row--result q-row"><div class="art art--2"><span>C</span></div><div class="row__main"><div class="row__title">The Less I Know the Better</div><div class="row__sub np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--dl" aria-label="Downloaded"><use href="#i-check"/></svg><span>Tame Impala</span></div></div><div class="row__dur">3:36</div></div>
+              <div class="row row--result q-row is-disabled"><div class="art art--5"><span>FO</span></div><div class="row__main"><div class="row__title">Pink + White</div><div class="row__sub np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-hidden="true"><use href="#i-stream"/></svg><span>Frank Ocean</span></div></div><span class="np-off-tag">Needs internet</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Errors -->
+  <section class="state">
+    <div class="state__label"><h4>Error — playback stopped mid-song</h4><p>Errors name the cause, where playback stopped, and the one action that fixes it. First: a downloaded file that won’t decode. Second: a stream that can’t continue because the device went offline. Skipping is the primary action so the music keeps going; the others stay quieter.</p></div>
+    <div class="state__frame">
+      <div class="state__pad">
+        <div class="banner banner--danger"><svg class="icon"><use href="#i-alert"/></svg><div class="banner__body"><div class="banner__title">Stopped at 2:07 — the rest of “Heat Waves” couldn’t be decoded</div><div class="banner__text">The file looks incomplete (7.6 MB expected, 4.1 MB on disk). Re-download from YouTube Music, or skip to the next song.</div></div><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-download"/></svg>Re-download</button></div>
+        <div class="err-track">
+          <div class="art art--lg art--1"><span>HW</span></div>
+          <div class="grow">
+            <div class="strong truncate">Heat Waves</div><div class="t-13 muted truncate">Glass Animals · Dreamland</div>
+            <div class="scrubber scrubber--inline np-mt-1" style="--p:53%;--b:54%"><div class="scrubber__times"><span>2:07</span></div><div class="scrubber__track"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div><div class="scrubber__times"><span>-1:51</span></div></div>
+          </div>
+          <button class="btn btn--primary"><svg class="icon"><use href="#i-skip-next"/></svg>Skip to next</button>
+        </div>
+        <div class="divider"></div>
+        <div class="banner banner--warn np-offline"><svg class="icon"><use href="#i-offline"/></svg><div class="banner__body"><div class="banner__title">Can’t stream — you’re offline. Downloaded songs still play</div><div class="banner__text">“Pink + White” isn’t downloaded and stopped at 0:42 after its cached part ran out. 17 of the 23 songs up next are downloaded.</div></div></div>
+        <div class="err-track">
+          <div class="art art--lg art--5"><span>FO</span></div>
+          <div class="grow">
+            <div class="strong truncate">Pink + White</div><div class="t-13 muted truncate np-minisub"><svg class="icon icon--16 np-src-ic np-src-ic--st" aria-label="Streaming"><use href="#i-stream"/></svg><span>Frank Ocean · Blonde</span></div>
+            <div class="scrubber scrubber--inline np-mt-1" style="--p:23%;--b:23%"><div class="scrubber__times"><span>0:42</span></div><div class="scrubber__track"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div><div class="scrubber__times"><span>-2:22</span></div></div>
+          </div>
+          <div class="np-errbtns">
+            <button class="btn btn--secondary"><svg class="icon"><use href="#i-download"/></svg>Download when online</button>
+            <button class="btn btn--primary"><svg class="icon"><use href="#i-skip-next"/></svg>Skip to next downloaded song</button>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="banner banner--warn"><svg class="icon"><use href="#i-alert"/></svg><div class="banner__body"><div class="banner__title">File not found — “Nights” was moved or deleted</div><div class="banner__text">Expected at /storage/emulated/0/Music/Frank Ocean/Blonde/10 Nights.flac. It was skipped; the queue continued.</div></div><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-folder"/></svg>Locate file</button></div>
+        <div class="banner banner--info desktop-only"><svg class="icon"><use href="#i-speaker"/></svg><div class="banner__body"><div class="banner__title">FiiO K3 disconnected — paused at 1:24</div><div class="banner__text">Playback won’t jump to the speakers on its own.</div></div><button class="btn btn--secondary btn--sm"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg>Resume on speakers</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Empty -->
+  <section class="state">
+    <div class="state__label"><h4>Empty — nothing playing · queue ended</h4><p>Fresh launch with nothing queued, and the queue panel after the last song finishes.</p></div>
+    <div class="state__frame">
+      <div class="state__pad">
+        <div class="state-pair">
+          <div class="card card--flush">
+            <div class="empty">
+              <div class="empty__icon"><svg class="icon"><use href="#i-music"/></svg></div>
+              <div class="empty__title">Nothing playing</div>
+              <div class="empty__text">Pick something from your library, or shuffle all 1,248 songs. Voice recordings stay out of shuffle.</div>
+              <div class="empty__actions"><button class="btn btn--primary"><svg class="icon"><use href="#i-shuffle"/></svg>Shuffle all</button><button class="btn btn--secondary"><svg class="icon"><use href="#i-library"/></svg>Open library</button></div>
+            </div>
+          </div>
+          <div class="card card--flush">
+            <div class="np-queue__head"><div><h3>Queue</h3><div class="t-13 muted num np-mt-1">0 up next</div></div></div>
+            <div class="empty empty--compact">
+              <div class="empty__icon"><svg class="icon"><use href="#i-queue"/></svg></div>
+              <div class="empty__title">End of Late drives</div>
+              <div class="empty__text">Playback stops after “Nights”. Add songs, or repeat the playlist.</div>
+              <div class="empty__actions"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-plus"/></svg>Add songs</button><button class="btn btn--ghost btn--sm"><svg class="icon icon--16"><use href="#i-repeat"/></svg>Repeat playlist</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+// Deterministic waveform bars: <div class="wave" data-bars="N" data-seed="S" data-played="P%">
+(function(){
+  function rnd(seed){ var s = seed * 9301 + 49297; return function(){ s = (s * 9301 + 49297) % 233280; return s / 233280; }; }
+  document.querySelectorAll('.wave[data-bars]').forEach(function(w){
+    var n = +w.dataset.bars, r = rnd(+w.dataset.seed || 1), played = +w.dataset.played || 0, frag = document.createDocumentFragment();
+    for (var i = 0; i < n; i++) {
+      var env = 0.35 + 0.65 * Math.abs(Math.sin(i / n * Math.PI * 2.3 + r()));
+      var h = Math.round(18 + 82 * env * (0.55 + 0.45 * r()));
+      var b = document.createElement('i'); b.style.setProperty('--h', h + '%');
+      if (i / n * 100 < played) b.classList.add('is-played');
+      frag.appendChild(b);
+    }
+    w.insertBefore(frag, w.firstChild);
+  });
+})();
+</script>
+</body>
+</html>

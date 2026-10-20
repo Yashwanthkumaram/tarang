@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Player — Voice recordings</title>
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<script>/* ?state=<id> shows only the review state tagged data-state="<id>" */(function(){var s=new URLSearchParams(location.search).get('state');if(!s)return;addEventListener('DOMContentLoaded',function(){var t=document.querySelector('[data-state="'+s+'"]');if(!t)return;for(var n=t;n&&n!==document.body;n=n.parentElement){var p=n.parentElement;if(!p)break;for(var i=0;i<p.children.length;i++){var c=p.children[i];if(c!==n&&!/^(SCRIPT|STYLE)$/.test(c.tagName)&&c.id!=='sprite')c.style.display='none';}}t.style.margin='0';window.scrollTo(0,0);});})()</script>
+<link rel="stylesheet" href="../system.css">
+<style>
+  /* Voice recordings — layout only; every colour, size and radius comes from system.css tokens */
+
+  /* Resume card (primary action lives here) */
+  .vr-resume { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: var(--sp-5); align-items: center; }
+  .vr-resume__main { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+  .vr-resume__title { font-size: var(--fs-20); font-weight: var(--fw-bold); letter-spacing: var(--track-tight); line-height: var(--lh-tight); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .vr-resume__wave { position: relative; }
+  .vr-resume__wave .wave { height: 40px; }
+  /* Waveform scrubber: 12 px handle on the playhead, 32 px hit area (44 px on phone) */
+  .vr-scrub { position: relative; height: 40px; cursor: pointer; border-radius: var(--r-sm); }
+  .vr-scrub:focus-visible { outline: none; }
+  .vr-handle { position: absolute; top: 50%; left: var(--p, 0%); width: 32px; height: 32px; margin: -16px 0 0 -16px; display: grid; place-items: center; pointer-events: none; }
+  .vr-handle::after { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 2px var(--surface); }
+  .vr-scrub:hover .vr-handle::after, .vr-scrub.is-hover .vr-handle::after { width: 14px; height: 14px; box-shadow: 0 0 0 2px var(--surface), 0 0 0 7px var(--src-voice-soft); }
+  .vr-scrub:focus-visible .vr-handle::after, .vr-scrub.is-focus .vr-handle::after { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--focus); }
+  .vr-scrub.is-active .vr-handle::after { width: 16px; height: 16px; background: var(--src-voice); box-shadow: 0 0 0 2px var(--surface), 0 0 0 8px var(--src-voice-soft); }
+  .vr-scrub .wave i.wave__cursor { width: 2px; }
+  .vr-resume__times { display: flex; justify-content: space-between; gap: var(--sp-3); font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .vr-resume__times strong { color: var(--text); font-weight: var(--fw-semibold); }
+  .vr-resume__aside { display: flex; flex-direction: column; align-items: flex-end; gap: var(--sp-3); }
+  .vr-speed { display: flex; align-items: center; gap: var(--sp-2); }
+  .vr-speed .eyebrow { white-space: nowrap; }
+
+  /* Body grid: list + right rail */
+  .vr-body { display: grid; grid-template-columns: minmax(0, 1fr) 360px; grid-template-areas: "list review" "list summary"; grid-template-rows: auto 1fr; gap: var(--sp-6) var(--sp-8); align-items: start; }
+  .vr-list { grid-area: list; min-width: 0; }
+  .vr-review { grid-area: review; }
+  .vr-summary { grid-area: summary; }
+
+  .vr-toolbar { display: flex; align-items: center; gap: var(--sp-3); margin-bottom: var(--sp-2); }
+  .vr-toolbar .search { flex: 1 1 auto; max-width: 420px; }
+  .vr-toolbar .btn { margin-left: auto; }
+  .vr-toolbar__count { font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .vr-toolbar__count strong { color: var(--text); font-weight: var(--fw-semibold); }
+  /* One left edge: toolbar search, group headers and row highlights all start at the page gutter */
+  .vr-list .list { margin: 0; }
+  .vr-list .group-head { padding-left: 0; padding-right: 0; }
+  .vr-more { display: flex; justify-content: center; padding-top: var(--sp-2); }
+
+  /* Desktop row actions: rename + move reveal on hover/focus, like the row menu */
+  .vr-list .row .vr-hover { opacity: 0; }
+  .vr-list .row:hover .vr-hover, .vr-list .row.is-hover .vr-hover, .vr-list .row:focus-within .vr-hover { opacity: 1; }
+  .vr-left { color: var(--accent-text); font-weight: var(--fw-medium); }
+
+  /* Play glyph: one size everywhere (player bar, mini player, row play, review preview, art tile) */
+  .icon.vr-glyph { width: 20px; height: 20px; flex: 0 0 20px; transform: translateX(1px); }
+  .btn--play { padding: 0; }
+  .btn--icon { padding: 0; }
+
+  /* Sub-line: waveform · when (clock + time of day) · speed badge. Nothing is cut mid-glyph. */
+  .vr-list .row__sub, .vr-review .row__sub, .vr-stage .row__sub { min-width: 0; overflow: hidden; }
+  .row--voice .row__sub > .vr-when { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* One separator component everywhere: "·" with var(--sp-1) on each side, no extra flex gap */
+  .vr-sep { display: inline-block; color: var(--text-3); padding: 0 var(--sp-1); flex: none; }
+  .row--voice .row__sub { gap: 0; }
+  .row--voice .row__sub > .wave { margin-right: var(--sp-2); }
+  .row--voice .row__sub > .badge { margin-left: var(--sp-2); }
+  .vr-meta { gap: 0; flex-wrap: nowrap; white-space: nowrap; }
+  .vr-meta > .vr-fmt { margin-left: var(--sp-2); }
+  .vr-meta > span { flex: none; }
+
+  /* Waveform thumbnails: unplayed bars read as content (>= 3:1 on surface), played bars in voice purple */
+  .wave i:not(.is-played):not(.wave__cursor) { background: var(--text-3); opacity: .8; }
+
+  /* Duration column: duration, then (phone only) the speed under it */
+  .row--voice .row__dur.vr-dur { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; line-height: 1.2; }
+  .vr-spd { font-size: var(--fs-12); font-weight: var(--fw-semibold); color: var(--src-voice-text); font-variant-numeric: tabular-nums; }
+
+  /* Desktop: one search, scoped to Voice */
+  .vr-topsearch .vr-scope { position: absolute; left: 38px; pointer-events: none; }
+  .vr-topsearch .vr-scope .icon { stroke-width: 2; }
+  .vr-topsearch .search__input { padding-left: 108px; }
+  .vr-loadbar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+  .icon.vr-clock { display: inline-block; width: 12px; height: 12px; margin-right: 3px; vertical-align: -1px; color: var(--text-3); }
+
+  /* Same row anatomy at every width: mic art tile. Desktop plays from the row's play button; phone plays on row tap. */
+  .vr-art > svg { position: static; inset: auto; }
+  .vr-art > .vr-art__mic { width: 20px; height: 20px; }
+
+  /* Phone-only progress line for a part-played recording */
+  .vr-prog { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-12); color: var(--text-2); min-width: 0; margin-top: 2px; }
+  .vr-prog__bar { position: relative; flex: 0 0 56px; height: 2px; border-radius: var(--r-pill); background: var(--surface-3); overflow: hidden; }
+  .vr-prog__bar > i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+  .vr-prog__text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+
+  /* Unsure files: one centred 16 px "?" on a 50/50 voice / music diagonal */
+  .art.vr-unsure { background: linear-gradient(135deg, var(--src-voice) 0 50%, var(--accent) 50% 100%); }
+  .art.vr-unsure > svg { position: static; inset: auto; width: 16px; height: 16px; stroke-width: 2; color: var(--on-accent); }
+
+  /* Review preview: duration then play, on the title row (same order as the main list) */
+  .vr-rrow { align-items: start; }
+  .vr-rrow > .art { margin-top: 2px; }
+  .vr-preview { display: flex; flex-direction: row; align-items: center; gap: var(--sp-2); margin-top: -6px; }
+  .vr-preview__dur { min-width: 32px; text-align: right; }
+  .vr-preview__btn { color: var(--text); }
+  .row .btn--icon.vr-preview__btn { color: var(--text); background: var(--surface-2); }
+  .row .btn--icon.vr-preview__btn:hover { background: var(--surface-3); }
+  .vr-preview__dur { font-size: var(--fs-12); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .vr-reason { color: var(--text-3); }
+  .vr-review .row__sub { flex-wrap: wrap; row-gap: var(--sp-1); }
+  .row--voice .row__sub > .vr-break { flex: 0 0 100%; width: 100%; height: 0; }
+  .vr-review .row__sub > .badge { margin-left: 0; margin-right: var(--sp-2); }
+  .vr-review .row__sub > .wave { flex-basis: 48px; width: 48px; }
+
+  /* Inline rename state */
+  .vr-rename { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .vr-rename .input { height: 32px; flex: 1 1 auto; min-width: 0; }
+  .vr-rename-row { height: 64px; background: var(--surface-2); }
+  .vr-rename-row:hover { background: var(--surface-2); }
+
+  /* Review card (rail) */
+  .vr-review .card__head { margin-bottom: var(--sp-1); align-items: flex-start; }
+  .vr-review__intro { font-size: var(--fs-13); color: var(--text-2); margin-bottom: var(--sp-2); }
+  .vr-review .list { margin: 0 calc(var(--sp-2) * -1); }
+  .vr-review .row + .row { border-top: 1px solid var(--border); border-radius: 0; }
+  .vr-review__foot { display: flex; gap: var(--sp-2); padding-top: var(--sp-3); border-top: 1px solid var(--border); margin-top: var(--sp-1); }
+  .vr-review__foot .btn { flex: 1 1 0; }
+
+  .vr-summary .stats { gap: var(--sp-6); margin-bottom: var(--sp-3); }
+  .vr-summary .stat { min-width: 0; }
+  .vr-summary .stat__num { font-size: var(--fs-20); }
+  .vr-note { display: flex; gap: var(--sp-2); align-items: flex-start; font-size: var(--fs-13); color: var(--text-2); padding-top: var(--sp-3); }
+  .vr-note .icon { margin-top: 1px; color: var(--src-voice-text); }
+
+  /* Player bar: voice item swaps the shuffle slot for speed */
+  .speed-btn { min-width: 64px; font-variant-numeric: tabular-nums; color: var(--text); }
+
+  @media (min-width: 821px) {
+    /* Rail is narrow: review rows put their Keep / Move buttons under the title */
+    .vr-review .row--stack { grid-template-columns: var(--art-row) minmax(0, 1fr) auto; grid-template-rows: auto auto; row-gap: var(--sp-2); }
+    .vr-review .row--stack .row__actions { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: nowrap; gap: var(--sp-1); padding-left: calc(var(--art-row) + var(--sp-3)); }
+  }
+  @media (min-width: 821px) and (max-width: 1239px) {
+    .vr-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-areas: "review summary" "list list"; grid-template-rows: auto auto; }
+    .vr-resume { grid-template-columns: 64px minmax(0, 1fr); }
+    .vr-resume__aside { grid-column: 1 / -1; flex-direction: row; justify-content: space-between; align-items: center; }
+  }
+
+  /* Review: 2 visible at every width, the rest behind "Review all 4" (no inner scroller, nothing cut at the fold) */
+  .vr-review__extra { display: none !important; }
+  .vr-review__all { margin-top: var(--sp-1); border-top: 1px solid var(--border); }
+
+  /* Group header counts: "2 recordings · 7 min" */
+  .vr-list .group-head__count { font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+  /* Selected speed reads clearly in both themes */
+  .vr-speed .seg__btn.is-active { background: var(--src-voice-soft); color: var(--src-voice-text); font-weight: var(--fw-semibold); box-shadow: inset 0 0 0 1px var(--src-voice); }
+
+  /* Breadcrumb: shared sub-page pattern (back arrow + breadcrumb) */
+  .crumb { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-13); color: var(--text-2); margin-bottom: var(--sp-1); }
+  .crumb a { color: var(--text-2); }
+  .crumb a:hover { color: var(--text); }
+  .crumb .icon { width: 14px; height: 14px; color: var(--text-3); }
+
+  /* Scrollbars: thin, token-coloured on desktop */
+  html, .main, .sidebar { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+  /* Review-only area below the live shell */
+  .variants { width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--sp-10) var(--gutter) var(--sp-16); display: flex; flex-direction: column; gap: var(--sp-10); }
+  .variants__intro { border-top: 1px solid var(--border); padding-top: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-1); }
+  .variants__intro p { color: var(--text-2); max-width: 640px; }
+  .variant { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .variant__label { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+  .variant__label p { color: var(--text-2); font-size: var(--fs-13); }
+  .variant__box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-5); }
+  .variant__box .list { margin: 0 calc(var(--sp-2) * -1); }
+  .variant-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); }
+  .vr-stage { position: relative; height: 560px; border-radius: var(--r-card); border: 1px solid var(--border); overflow: hidden; background: var(--page); }
+  .vr-stage .scrim { position: absolute; }
+  .vr-stage__under { padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); }
+  .vr-sheet-head { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: var(--sp-3); align-items: center; }
+  .vr-sheet-head .art { width: 44px; height: 44px; }
+  .vr-toast-demo { position: static; transform: none; width: min(420px, 100%); }
+  .vr-states { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-6); }
+  .vr-states figure { margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+  .vr-states figcaption { font-size: var(--fs-13); color: var(--text-2); }
+  .vr-tipdemo { display: flex; align-items: center; gap: var(--sp-2); }
+  .skel-wave { height: 20px; width: 72px; border-radius: var(--r-sm); }
+
+  @media (max-width: 820px) {
+    /* Phone: no visible scrollbar, and the last content always clears the mini player + tab bar */
+    html, .main { scrollbar-width: none; }
+    html::-webkit-scrollbar, .main::-webkit-scrollbar { display: none; }
+    .main > .page { padding-bottom: calc(var(--mini-h) + var(--tabbar-h) + var(--sp-4)); }
+    .vr-resume { grid-template-columns: 64px minmax(0, 1fr); gap: var(--sp-4); }
+    .vr-resume__title { font-size: var(--fs-16); white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .vr-resume__wave { grid-column: 1 / -1; }
+    .vr-resume__main { display: contents; }
+    .vr-resume__head { min-width: 0; }
+    .vr-resume__aside { grid-column: 1 / -1; align-items: stretch; }
+    .vr-speed { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+    .vr-speed .seg { width: 100%; }
+    .vr-speed .seg__btn { flex: 1 1 0; justify-content: center; }
+
+    .vr-body { grid-template-columns: minmax(0, 1fr); grid-template-areas: "review" "list" "summary"; gap: var(--sp-6); }
+    .vr-toolbar { margin-bottom: 0; }
+    .vr-scan { height: 44px; min-width: 44px; padding: 0 var(--sp-4); }
+    .vr-meta { font-size: var(--fs-13); }
+
+    /* Recording rows: mic tile | title + full date | duration over speed | ··· (the whole row plays on tap) */
+    .vr-row { cursor: pointer; }
+    /* Waveform thumbnail stays on phone: 48 px, same as the review card; the clock glyph drops to make room */
+    .row--voice .row__sub > .wave { display: flex; flex: 0 0 48px; width: 48px; }
+    .row--voice .row__sub .vr-clock { display: none; }
+    .row--voice .row__sub > .vr-when { flex: none; overflow: visible; }
+    .row--voice .row__sub .vr-date ~ .vr-tod { display: none; }
+    .vr-dur { font-size: var(--fs-13); }
+    .vr-review .row--stack .row__sub { flex-wrap: wrap; }
+    .vr-preview { margin-top: 0; }
+    .vr-row--prog { height: auto; min-height: 64px; padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
+
+    .vr-review__foot { display: none; }
+    .vr-review .row--stack .row__actions .btn { flex: 1 1 0; }
+    .vr-preview { min-width: 44px; }
+    .vr-review .row + .row { border-top: 1px solid var(--border); }
+    .vr-summary .stats { grid-template-columns: repeat(3, 1fr); }
+
+    .variants { padding: var(--sp-8) var(--gutter) var(--sp-12); gap: var(--sp-8); }
+    .variant__box { padding: var(--sp-4); }
+    .variant-grid { grid-template-columns: minmax(0, 1fr); }
+    .vr-states { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .vr-handle { width: 44px; height: 44px; margin: -22px 0 0 -22px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ Icon sprite (inline SVG, stroke 2) — same set as _components.html ============ -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true" id="sprite">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4h3v16H4zM10 4h3v16h-3zM15.5 5.2l2.9-.8 4.1 14.7-2.9.8z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 6l-10 6 10 6zM5 6v12"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 6l10 6-10 6zM19 6v12"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M3 6h12M3 12h12M3 18h8M18 6v10"/><circle cx="16" cy="16.5" r="2.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></symbol>
+  <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-speed" viewBox="0 0 24 24"><path d="M3 17a9 9 0 1 1 18 0M12 14l4-5"/><circle cx="12" cy="14" r="1.5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-storage" viewBox="0 0 24 24"><path d="M4 14h16v6H4zM4 14l2.5-8h11L20 14M8 17h.01"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="M22.6 16.6A5 5 0 0 0 18 9h-1.3A8 8 0 0 0 5 6.3M3 3l18 18M7 17h11M3.2 12.8A5 5 0 0 0 7 19"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-disc" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-playlist" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h7M19 9v9M16 13h6"/></symbol>
+  <symbol id="i-question" viewBox="0 0 24 24"><path d="M7.5 8.5a4.5 4.5 0 1 1 6.3 4.1c-1.1.5-1.8 1.5-1.8 2.7V16M12 20.5h.01"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><path d="M10 2h4M12 14l3-3"/><circle cx="12" cy="14" r="8"/></symbol>
+
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M2 12h2M6 8v8M10 5v14M14 8v8M18 10v4M22 12h0"/></symbol>
+</svg>
+
+<!-- ======================================================================
+     LIVE SCREEN — Voice recordings (desktop shell + phone shell)
+     ====================================================================== -->
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sidebar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span>Offline Player</div>
+    <nav class="sidebar__section" aria-label="Primary">
+      <a class="nav-item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+      <a class="nav-item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+      <a class="nav-item" href="library.html"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+      <a class="nav-item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="nav-item__count">3</span></a>
+      <a class="nav-item is-active" href="voice.html" aria-current="page"><svg class="icon"><use href="#i-mic"/></svg>Voice recordings<span class="nav-item__count">18</span></a>
+    </nav>
+    <div class="sidebar__section">
+      <div class="eyebrow sidebar__label">Playlists</div>
+      <a class="nav-item nav-item--playlist" href="library.html"><svg class="icon icon--16"><use href="#i-heart"/></svg>Liked songs</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Late drives</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Focus — no vocals</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Gym 2026</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html#create"><svg class="icon icon--16"><use href="#i-plus"/></svg>New playlist</a>
+    </div>
+    <div class="sidebar__section sidebar__foot">
+      <a class="nav-item" href="settings.html"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <a class="btn btn--icon topbar__back" href="library.html" aria-label="Back to Library"><svg class="icon"><use href="#i-chevron-left"/></svg></a>
+      <div class="topbar__title phone-only">Voice recordings</div>
+      <div class="search desktop-only"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" placeholder="Search YouTube Music and your library" aria-label="Search"><span class="search__kbd">Ctrl K</span></div>
+      <a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a>
+      <button class="btn btn--icon phone-only topbar__trail" aria-label="More · Scan for new recordings, Sort" aria-haspopup="menu"><svg class="icon"><use href="#i-more"/></svg></button>
+    </header>
+
+    <div class="page">
+
+      <div class="page-head desktop-only">
+        <div>
+          <nav class="crumb" aria-label="Breadcrumb"><a href="library.html">Library</a><svg class="icon" aria-hidden="true"><use href="#i-chevron-right"/></svg><span>Voice recordings</span></nav>
+          <h1>Voice recordings</h1>
+          <div class="page-head__sub num">18 recordings · 3 h 12 min · 186 MB · kept out of music and shuffle</div>
+        </div>
+        <div class="page-head__actions">
+          <button class="btn btn--secondary"><svg class="icon"><use href="#i-scan"/></svg>Scan for new</button>
+        </div>
+      </div>
+
+      <!-- Phone: search sits directly under the header -->
+      <div class="search phone-only"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" type="search" placeholder="Search recordings by name or date" aria-label="Search voice recordings"></div>
+
+      <!-- Continue listening (the one primary action) -->
+      <section class="card card--pad-lg vr-resume" aria-labelledby="h-resume">
+        <div class="art art--lg art--voice"><span style="display:grid"><svg class="icon icon--24"><use href="#i-mic"/></svg></span></div>
+        <div class="vr-resume__main">
+          <div class="vr-resume__head">
+            <div class="eyebrow">Continue listening</div>
+            <div class="vr-resume__title" id="h-resume">Lecture 7 — Thermodynamics</div>
+            <div class="meta vr-meta"><span>Thu 16 Oct</span><span class="vr-sep" aria-hidden="true">·</span><span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>11:02 am</span><span class="vr-sep" aria-hidden="true">·</span><span>48:12</span><span class="badge badge--outline desktop-only vr-fmt">M4A</span></div>
+          </div>
+          <div class="vr-resume__wave">
+            <div class="vr-scrub" style="--p:45%" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0" aria-valuemax="2892" aria-valuenow="1300" aria-valuetext="21:40 of 48:12">
+              <div class="wave wave--voice" data-bars="96" data-seed="7" data-played="45"><i class="wave__cursor"></i></div>
+              <span class="vr-handle" aria-hidden="true"></span>
+            </div>
+            <div class="vr-resume__times"><span><strong>21:40</strong> / 48:12<span class="vr-sep" aria-hidden="true">·</span>45%</span><span>17:41 left at 1.5×</span></div>
+          </div>
+        </div>
+        <div class="vr-resume__aside">
+          <div class="vr-speed">
+            <span class="eyebrow">Speed</span>
+            <div class="seg" role="radiogroup" aria-label="Playback speed for this recording">
+              <button class="seg__btn" role="radio" aria-checked="false">0.75×</button>
+              <button class="seg__btn" role="radio" aria-checked="false">1×</button>
+              <button class="seg__btn" role="radio" aria-checked="false">1.25×</button>
+              <button class="seg__btn is-active" role="radio" aria-checked="true">1.5×</button>
+              <button class="seg__btn" role="radio" aria-checked="false">2×</button>
+            </div>
+          </div>
+          <button class="btn btn--primary btn--lg"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg>Resume from 21:40</button>
+        </div>
+      </section>
+
+      <div class="vr-body">
+
+        <!-- All recordings, grouped by date -->
+        <section class="vr-list" aria-labelledby="h-all">
+          <h2 class="sr-only" id="h-all">All recordings</h2>
+          <div class="vr-toolbar">
+            <span class="vr-toolbar__count">All <strong>18</strong> recordings</span>
+            <button class="btn btn--ghost btn--sm" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-sort"/></svg>Newest first<svg class="icon icon--16"><use href="#i-chevron-down"/></svg></button>
+          </div>
+
+          <div class="list">
+            <div class="group-head"><span>Today<span class="vr-sep" aria-hidden="true">·</span>Sun 19 Oct</span><span class="group-head__count">2 recordings<span class="vr-sep" aria-hidden="true">·</span>7 min</span></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Voice memo — chapter 4 outline</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="11" data-played="0"></div><span class="vr-when"><span class="vr-tod"><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>10:26 am</span></span></div></div><div class="row__dur vr-dur"><span>6:18</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Voice memo — chapter 4 outline"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Grocery list</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="4" data-played="0"></div><span class="vr-when"><span class="vr-tod"><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>8:03 am</span></span></div></div><div class="row__dur vr-dur"><span>0:47</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Grocery list"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+
+            <div class="group-head"><span>Yesterday<span class="vr-sep" aria-hidden="true">·</span>Sat 18 Oct</span><span class="group-head__count">2 recordings<span class="vr-sep" aria-hidden="true">·</span>16 min</span></div>
+            <!-- Rename in progress (desktop inline edit) -->
+            <div class="row row--actions row--voice vr-rename-row desktop-only">
+              <div class="art art--voice"><span style="display:grid"><svg class="icon"><use href="#i-mic"/></svg></span></div>
+              <div class="row__main">
+                <div class="vr-rename"><input class="input is-focus" value="Call with landlord — lease renewal" aria-label="Recording name"></div>
+              </div>
+              <div class="row__dur">14:05</div>
+              <div class="row__actions">
+                <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-check"/></svg>Save</button>
+                <button class="btn btn--ghost btn--sm">Cancel</button>
+              </div>
+            </div>
+            <div class="phone-only"><div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Call with landlord — lease renewal</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="8" data-played="0"></div><span class="vr-when"><span class="vr-tod"><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>5:22 pm</span></span></div></div><div class="row__dur vr-dur"><span>14:05</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Call with landlord — lease renewal"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div></div>
+            <div class="row row--actions row--voice vr-row is-hover"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Guitar idea in D — humming</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="2" data-played="100"></div><span class="vr-when"><span class="vr-tod"><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>9:40 pm</span></span></div></div><div class="row__dur vr-dur"><span>1:58</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Guitar idea in D — humming"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+
+            <div class="group-head">Earlier this week<span class="group-head__count">4 recordings<span class="vr-sep" aria-hidden="true">·</span>1 h 45 min</span></div>
+            <div class="row row--actions row--voice vr-row is-playing vr-row--prog"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Lecture 7 — Thermodynamics</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="7" data-played="45"></div><span class="vr-when"><span class="vr-date">Thu 16 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>11:02 am</span></span><span class="badge badge--voice desktop-only"><span class="badge__label">1.5×</span></span><span class="vr-sep desktop-only" aria-hidden="true">·</span><span class="vr-left desktop-only num">17:41 left</span></div><div class="vr-prog phone-only"><span class="vr-prog__bar" aria-hidden="true"><i style="width:45%"></i></span><span class="vr-prog__text num">45%<span class="vr-sep" aria-hidden="true">·</span><span class="vr-left">17:41 left</span></span></div></div><div class="row__dur vr-dur"><span>48:12</span><span class="vr-spd phone-only">1.5×</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Lecture 7 — Thermodynamics"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Podcast draft — episode 3 intro</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="5" data-played="100"></div><span class="vr-when"><span class="vr-date">Wed 15 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>8:12 pm</span></span></div></div><div class="row__dur vr-dur"><span>5:36</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Podcast draft — episode 3 intro"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Standup notes — 14 Oct</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="3" data-played="100"></div><span class="vr-when"><span class="vr-date">Tue 14 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>9:14 am</span></span><span class="badge badge--voice desktop-only"><span class="badge__label">1.5×</span></span></div></div><div class="row__dur vr-dur"><span>12:41</span><span class="vr-spd phone-only">1.5×</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Standup notes — 14 Oct"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Interview — Priya, UX research</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="9" data-played="0"></div><span class="vr-when"><span class="vr-date">Mon 13 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>3:30 pm</span></span><span class="badge badge--voice desktop-only"><span class="badge__label">1.25×</span></span></div></div><div class="row__dur vr-dur"><span>38:44</span><span class="vr-spd phone-only">1.25×</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Interview — Priya, UX research"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+
+            <div class="group-head">Earlier in October<span class="group-head__count">4 recordings<span class="vr-sep" aria-hidden="true">·</span>15 min</span></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Book notes — Atomic Habits ch. 3</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="12" data-played="100"></div><span class="vr-when"><span class="vr-date">Thu 9 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>10:48 pm</span></span><span class="badge badge--voice desktop-only"><span class="badge__label">1.5×</span></span></div></div><div class="row__dur vr-dur"><span>9:27</span><span class="vr-spd phone-only">1.5×</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Book notes — Atomic Habits ch. 3"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Wedding toast practice</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="6" data-played="60"></div><span class="vr-when"><span class="vr-date">Mon 6 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>7:05 pm</span></span></div></div><div class="row__dur vr-dur"><span>4:51</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Wedding toast practice"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Dentist — next appointment</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="13" data-played="0"></div><span class="vr-when"><span class="vr-date">Fri 3 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>12:31 pm</span></span></div></div><div class="row__dur vr-dur"><span>0:22</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Dentist — next appointment"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Parking spot — level B2, pillar 14</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="14" data-played="0"></div><span class="vr-when"><span class="vr-date">Wed 1 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>8:47 am</span></span></div></div><div class="row__dur vr-dur"><span>0:14</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Parking spot — level B2, pillar 14"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+
+            <div class="group-head">September<span class="group-head__count">6 recordings<span class="vr-sep" aria-hidden="true">·</span>49 min</span></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Meeting notes — Q3 retro</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="15" data-played="100"></div><span class="vr-when"><span class="vr-date">Tue 30 Sep</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>4:00 pm</span></span><span class="badge badge--voice desktop-only"><span class="badge__label">1.25×</span></span></div></div><div class="row__dur vr-dur"><span>22:10</span><span class="vr-spd phone-only">1.25×</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Meeting notes — Q3 retro"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+            <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Recipe from Amma — rasam</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="16" data-played="20"></div><span class="vr-when"><span class="vr-date">Sun 21 Sep</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>1:18 pm</span></span></div></div><div class="row__dur vr-dur"><span>7:42</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Recipe from Amma — rasam"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+          </div>
+          <div class="vr-more"><button class="btn btn--ghost btn--sm">Show 4 more from September<span class="faint num">19 min</span><svg class="icon icon--16"><use href="#i-chevron-down"/></svg></button></div>
+        </section>
+
+        <!-- Review queue: unsure items -->
+        <section class="card vr-review" aria-labelledby="h-review">
+          <div class="card__head">
+            <div>
+              <div class="card__title" id="h-review">Needs review<span class="badge badge--warn" style="margin-left:var(--sp-2)"><span class="badge__label">4</span></span></div>
+            </div>
+            <button class="btn btn--ghost btn--sm desktop-only" title="Keep 3 as voice, move 1 to music"><svg class="icon icon--16"><use href="#i-check"/></svg>Accept suggestions</button>
+          </div>
+          <p class="vr-review__intro">Kept out of music and shuffle until you decide.</p>
+          <div class="list">
+            <div class="row row--actions row--voice row--stack vr-rrow"><div class="art vr-unsure" aria-hidden="true"><svg class="icon"><use href="#i-question"/></svg></div><div class="row__main"><div class="row__title">REC_20261017_193022.m4a</div><div class="row__sub"><div class="wave wave--sm" data-bars="28" data-seed="21" data-played="0"></div><span class="vr-when"><span class="vr-date">17 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>7:30 pm</span></span><span class="vr-break" aria-hidden="true"></span><span class="badge badge--warn"><span class="badge__label">Unsure · 58% voice</span></span><span class="vr-reason">Speech over music</span></div></div><div class="vr-preview"><span class="vr-preview__dur num">3:12</span><button class="btn btn--icon btn--sm vr-preview__btn" aria-label="Preview REC_20261017_193022.m4a"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button></div><div class="row__actions"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-mic"/></svg>Keep as voice</button><button class="btn btn--ghost btn--sm"><svg class="icon icon--16"><use href="#i-music"/></svg>Move to music</button></div></div>
+            <div class="row row--actions row--voice row--stack vr-rrow"><div class="art vr-unsure" aria-hidden="true"><svg class="icon"><use href="#i-question"/></svg></div><div class="row__main"><div class="row__title">AUD-20261011-WA0012.opus</div><div class="row__sub"><div class="wave wave--sm" data-bars="28" data-seed="22" data-played="0"></div><span class="vr-when"><span class="vr-date">11 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>8:15 am</span></span><span class="vr-break" aria-hidden="true"></span><span class="badge badge--warn"><span class="badge__label">Unsure · 61% voice</span></span><span class="vr-reason">WhatsApp voice note</span></div></div><div class="vr-preview"><span class="vr-preview__dur num">0:56</span><button class="btn btn--icon btn--sm vr-preview__btn" aria-label="Preview AUD-20261011-WA0012.opus"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button></div><div class="row__actions"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-mic"/></svg>Keep as voice</button><button class="btn btn--ghost btn--sm"><svg class="icon icon--16"><use href="#i-music"/></svg>Move to music</button></div></div>
+            <div class="row row--actions row--voice row--stack vr-rrow vr-review__extra"><div class="art vr-unsure" aria-hidden="true"><svg class="icon"><use href="#i-question"/></svg></div><div class="row__main"><div class="row__title">Voice 041.m4a</div><div class="row__sub"><div class="wave wave--sm" data-bars="28" data-seed="23" data-played="0"></div><span class="vr-when"><span class="vr-date">6 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>11:02 pm</span></span><span class="vr-break" aria-hidden="true"></span><span class="badge badge--warn"><span class="badge__label">Unsure · 52% voice</span></span><span class="vr-reason">Humming with guitar</span></div></div><div class="vr-preview"><span class="vr-preview__dur num">2:04</span><button class="btn btn--icon btn--sm vr-preview__btn" aria-label="Preview Voice 041.m4a"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button></div><div class="row__actions"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-mic"/></svg>Keep as voice</button><button class="btn btn--ghost btn--sm"><svg class="icon icon--16"><use href="#i-music"/></svg>Move to music</button></div></div>
+            <div class="row row--actions row--voice row--stack vr-rrow vr-review__extra"><div class="art vr-unsure" aria-hidden="true"><svg class="icon"><use href="#i-question"/></svg></div><div class="row__main"><div class="row__title">track01_demo.wav</div><div class="row__sub"><div class="wave wave--sm" data-bars="28" data-seed="24" data-played="0"></div><span class="vr-when"><span class="vr-date">30 Sep</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>6:44 pm</span></span><span class="vr-break" aria-hidden="true"></span><span class="badge badge--warn"><span class="badge__label">Unsure · 44% voice</span></span><span class="vr-reason">Mostly instruments</span></div></div><div class="vr-preview"><span class="vr-preview__dur num">3:40</span><button class="btn btn--icon btn--sm vr-preview__btn" aria-label="Preview track01_demo.wav"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button></div><div class="row__actions"><button class="btn btn--ghost btn--sm"><svg class="icon icon--16"><use href="#i-mic"/></svg>Keep as voice</button><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-music"/></svg>Move to music</button></div></div>
+          </div>
+          <a class="srow srow--link vr-review__all" href="#"><div class="srow__main"><div class="srow__title">Review all 4</div><div class="srow__sub num">2 more<span class="vr-sep" aria-hidden="true">·</span>suggested 3 voice, 1 music</div></div><svg class="icon muted"><use href="#i-chevron-right"/></svg></a>
+        </section>
+
+        <!-- Summary -->
+        <section class="card vr-summary" aria-labelledby="h-summary">
+          <div class="card__head"><div class="card__title" id="h-summary">About this section</div></div>
+          <div class="stats">
+            <div class="stat"><div class="stat__num">18</div><div class="stat__label">Recordings</div></div>
+            <div class="stat"><div class="stat__num">3 h 12</div><div class="stat__label">Total length</div></div>
+            <div class="stat"><div class="stat__num">186</div><div class="stat__label">MB on disk</div></div>
+          </div>
+          <div class="srow srow--link"><div class="srow__main"><div class="srow__title">Found in</div><div class="srow__sub truncate">Recorder · WhatsApp Voice Notes · Downloads</div></div><svg class="icon muted"><use href="#i-chevron-right"/></svg></div>
+          <div class="srow srow--link"><div class="srow__main"><div class="srow__title">Voice classifier</div><div class="srow__sub">Sorts new files after every scan</div></div><span class="srow__value">On</span><svg class="icon muted"><use href="#i-chevron-right"/></svg></div>
+          <div class="srow srow--link"><div class="srow__main"><div class="srow__title">Default speed</div><div class="srow__sub">For recordings you haven't set</div></div><span class="srow__value">1×</span><svg class="icon muted"><use href="#i-chevron-right"/></svg></div>
+          <div class="vr-note"><svg class="icon icon--16"><use href="#i-info"/></svg><span>Voice recordings never appear in Songs, playlists or music shuffle. Use “Move to music” on any row if one landed here by mistake.</span></div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Desktop player bar: a voice item is loaded, so the shuffle slot becomes the speed control (voice never shuffles) -->
+  <footer class="player-bar">
+    <div class="player-bar__now">
+      <div class="art art--voice"><span style="display:grid"><svg class="icon"><use href="#i-mic"/></svg></span></div>
+      <div class="player-bar__meta"><div class="player-bar__title truncate">Lecture 7 — Thermodynamics</div><div class="player-bar__sub truncate">Voice recording<span class="vr-sep" aria-hidden="true">·</span>Thu 16 Oct</div></div>
+    </div>
+    <div class="player-bar__center">
+      <div class="transport">
+        <button class="btn btn--ghost btn--sm speed-btn" aria-label="Playback speed 1.5×" title="Playback speed" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-speed"/></svg>1.5×</button>
+        <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+        <button class="btn btn--play" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+        <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+        <button class="btn btn--icon" aria-label="Repeat off"><svg class="icon"><use href="#i-repeat"/></svg></button>
+      </div>
+      <div class="scrubber scrubber--inline" style="--p:45%;--b:100%">
+        <div class="scrubber__times"><span>21:40</span></div>
+        <div class="scrubber__track"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div>
+        <div class="scrubber__times"><span>-17:41</span></div>
+      </div>
+    </div>
+    <div class="player-bar__right">
+      <button class="btn btn--icon" aria-label="Queue"><svg class="icon"><use href="#i-queue"/></svg></button>
+      <button class="btn btn--icon" aria-label="Sleep timer"><svg class="icon"><use href="#i-moon"/></svg></button>
+      <div class="volume" style="--p:70%"><svg class="icon muted"><use href="#i-volume"/></svg><div class="volume__track"><i class="volume__fill"></i><i class="volume__thumb"></i></div></div>
+    </div>
+  </footer>
+
+  <!-- Phone mini player + tab bar (voice lives under Library) -->
+  <div class="mini-player">
+    <div class="mini-player__progress" style="--p:45%"><i></i></div>
+    <div class="art art--voice"><span style="display:grid"><svg class="icon"><use href="#i-mic"/></svg></span></div>
+    <div class="mini-player__meta"><div class="mini-player__title truncate">Lecture 7 — Thermodynamics</div><div class="mini-player__sub truncate num">Voice<span class="vr-sep" aria-hidden="true">·</span>1.5×<span class="vr-sep" aria-hidden="true">·</span>21:40 / 48:12</div></div>
+    <button class="btn btn--icon" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+    <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+  </div>
+  <nav class="tabbar" aria-label="Primary">
+    <a class="tabbar__item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+    <a class="tabbar__item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+    <a class="tabbar__item is-active" href="library.html" aria-current="page"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+    <a class="tabbar__item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="tab-count" aria-label="3 active downloads">3</span></a>
+  </nav>
+</div>
+
+<!-- ======================================================================
+     STATE VARIANTS (review only) — row menu · empty · loading · no results · review done · error
+     ====================================================================== -->
+<div class="variants">
+  <div class="variants__intro">
+    <div class="eyebrow">State variants</div>
+    <h2 class="t-20">Voice recordings — menus, empty, loading and error</h2>
+    <p>Rendered below the live screen so they can be reviewed in one file. Each uses the same card, row and header anatomy as the screen above.</p>
+  </div>
+
+  <!-- ROW MENU -->
+  <section class="variant" aria-label="Row menu">
+    <div class="variant__label"><h3 class="t-16">Row menu — rename, speed, move to music</h3><p>Phone: ··· opens a bottom sheet (thumb reach, 48 px items). Desktop: the same items in a dropdown. Delete sits last, behind a divider.</p></div>
+    <div class="variant-grid">
+      <div class="vr-stage">
+        <div class="vr-stage__under">
+          <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Interview — Priya, UX research</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="9" data-played="0"></div><span class="vr-when"><span class="vr-date">Mon 13 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>3:30 pm</span></span><span class="badge badge--voice desktop-only"><span class="badge__label">1.25×</span></span></div></div><div class="row__dur vr-dur"><span>38:44</span><span class="vr-spd phone-only">1.25×</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Interview — Priya, UX research"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+          <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Podcast draft — episode 3 intro</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="5" data-played="100"></div><span class="vr-when"><span class="vr-date">Wed 15 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>8:12 pm</span></span></div></div><div class="row__dur vr-dur"><span>5:36</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Podcast draft — episode 3 intro"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+        </div>
+        <div class="scrim scrim--sheet">
+          <div class="sheet" role="dialog" aria-label="Recording options">
+            <div class="sheet__grab"></div>
+            <div class="vr-sheet-head">
+              <div class="art art--voice"><span style="display:grid"><svg class="icon"><use href="#i-mic"/></svg></span></div>
+              <div class="row__main"><div class="row__title">Interview — Priya, UX research</div><div class="row__sub"><span>Mon 13 Oct</span><span class="vr-sep" aria-hidden="true">·</span><span>3:30 pm</span><span class="vr-sep" aria-hidden="true">·</span><span class="num">38:44</span></div></div>
+            </div>
+            <div class="vr-speed">
+              <span class="eyebrow">Speed for this recording</span>
+              <div class="seg seg--block" role="radiogroup" aria-label="Playback speed">
+                <button class="seg__btn" role="radio" aria-checked="false">0.75×</button>
+                <button class="seg__btn" role="radio" aria-checked="false">1×</button>
+                <button class="seg__btn is-active" role="radio" aria-checked="true">1.25×</button>
+                <button class="seg__btn" role="radio" aria-checked="false">1.5×</button>
+                <button class="seg__btn" role="radio" aria-checked="false">2×</button>
+              </div>
+            </div>
+            <div class="menu">
+              <button class="menu__item"><svg class="icon icon--fill"><use href="#i-play"/></svg>Play</button>
+              <button class="menu__item"><svg class="icon"><use href="#i-edit"/></svg>Rename</button>
+              <button class="menu__item"><svg class="icon"><use href="#i-music"/></svg>Move to music<span class="menu__hint">Adds to Songs</span></button>
+              <button class="menu__item"><svg class="icon"><use href="#i-folder"/></svg>Show file location</button>
+              <div class="menu__sep"></div>
+              <button class="menu__item menu__item--danger"><svg class="icon"><use href="#i-trash"/></svg>Delete from device</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="variant__box" style="justify-content:flex-start">
+        <div class="eyebrow">Desktop dropdown</div>
+        <div class="menu" role="menu">
+          <button class="menu__item" role="menuitem"><svg class="icon icon--fill"><use href="#i-play"/></svg>Play<span class="menu__hint">Enter</span></button>
+          <button class="menu__item is-hover" role="menuitem"><svg class="icon"><use href="#i-edit"/></svg>Rename<span class="menu__hint">F2</span></button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-speed"/></svg>Playback speed<span class="menu__hint">1.25×</span></button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-music"/></svg>Move to music</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-folder"/></svg>Show in folder</button>
+          <div class="menu__sep"></div>
+          <button class="menu__item menu__item--danger" role="menuitem"><svg class="icon"><use href="#i-trash"/></svg>Delete from device</button>
+        </div>
+        <div class="eyebrow">After “Move to music”</div>
+        <div class="toast toast--ok vr-toast-demo" role="status">
+          <svg class="icon"><use href="#i-check-circle"/></svg>
+          <div class="toast__text">Moved to music<span class="toast__sub">“track01_demo.wav” is now in Songs</span></div>
+          <button class="btn">Undo</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCRUBBER + TOOLTIP STATES -->
+  <section class="variant" aria-label="Scrubber states">
+    <div class="variant__label"><h3 class="t-16">Continue-listening scrubber — rest, hover, keyboard focus, dragging</h3><p>12 px handle in text colour on the playhead. Hit area 32 px on desktop, 44 px on phone. Arrow keys seek 10 s; Shift+arrow 1 min.</p></div>
+    <div class="variant__box">
+      <div class="vr-states">
+        <figure><div class="vr-scrub " style="--p:45%" aria-hidden="true"><div class="wave wave--voice" data-bars="40" data-seed="7" data-played="45"><i class="wave__cursor"></i></div><span class="vr-handle"></span></div><figcaption>Rest</figcaption></figure>
+        <figure><div class="vr-scrub is-hover" style="--p:45%" aria-hidden="true"><div class="wave wave--voice" data-bars="40" data-seed="7" data-played="45"><i class="wave__cursor"></i></div><span class="vr-handle"></span></div><figcaption>Hover (desktop)</figcaption></figure>
+        <figure><div class="vr-scrub is-focus" style="--p:45%" aria-hidden="true"><div class="wave wave--voice" data-bars="40" data-seed="7" data-played="45"><i class="wave__cursor"></i></div><span class="vr-handle"></span></div><figcaption>Keyboard focus ring</figcaption></figure>
+        <figure><div class="vr-scrub is-active" style="--p:58%" aria-hidden="true"><div class="wave wave--voice" data-bars="40" data-seed="7" data-played="58"><i class="wave__cursor"></i></div><span class="vr-handle"></span></div><figcaption>Dragging · 28:01</figcaption></figure>
+      </div>
+      <div class="vr-tipdemo desktop-only"><button class="btn btn--icon btn--sm is-hover" aria-label="Rename, speed, move to music"><svg class="icon icon--16"><use href="#i-more"/></svg></button><span class="tip">Rename, speed, move to music</span><span class="t-13 muted">Hover label on the row menu button</span></div>
+    </div>
+  </section>
+
+  <!-- SEARCH WITH MATCHES -->
+  <section class="variant" aria-label="Search results">
+    <div class="variant__label"><h3 class="t-16">Search — matches</h3><p>One field per layout: on desktop the topbar search is scoped to Voice; on phone it sits under the header. The count follows the query: "All 18 recordings" becomes "3 matches". Groups collapse into one result list.</p></div>
+    <div class="variant__box">
+      <div class="vr-toolbar">
+        <div class="search vr-topsearch"><svg class="icon"><use href="#i-search"/></svg><span class="badge badge--voice vr-scope"><svg class="icon"><use href="#i-mic"/></svg>Voice</span><input class="search__input is-focus" type="search" value="lecture" aria-label="Search voice recordings"><button class="btn btn--icon btn--sm search__clear" aria-label="Clear search"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+        <span class="vr-toolbar__count"><strong>3</strong> matches</span>
+      </div>
+      <div class="list vr-list">
+        <div class="row row--actions row--voice vr-row is-playing vr-row--prog"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Lecture 7 — Thermodynamics</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="7" data-played="45"></div><span class="vr-when"><span class="vr-date">Thu 16 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>11:02 am</span></span><span class="badge badge--voice desktop-only"><span class="badge__label">1.5×</span></span><span class="vr-sep desktop-only" aria-hidden="true">·</span><span class="vr-left desktop-only num">17:41 left</span></div><div class="vr-prog phone-only"><span class="vr-prog__bar" aria-hidden="true"><i style="width:45%"></i></span><span class="vr-prog__text num">45%<span class="vr-sep" aria-hidden="true">·</span><span class="vr-left">17:41 left</span></span></div></div><div class="row__dur vr-dur"><span>48:12</span><span class="vr-spd phone-only">1.5×</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Lecture 7 — Thermodynamics"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+        <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Lecture 6 — Entropy and the second law</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="17" data-played="100"></div><span class="vr-when"><span class="vr-date">Thu 9 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>11:00 am</span></span><span class="badge badge--voice desktop-only"><span class="badge__label">1.5×</span></span></div></div><div class="row__dur vr-dur"><span>51:30</span><span class="vr-spd phone-only">1.5×</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Lecture 6 — Entropy and the second law"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+        <div class="row row--actions row--voice vr-row"><div class="art art--voice vr-art" aria-hidden="true"><svg class="icon vr-art__mic"><use href="#i-mic"/></svg></div><div class="row__main"><div class="row__title">Lecture 5 — Heat engines</div><div class="row__sub"><div class="wave wave--sm wave--voice" data-bars="28" data-seed="18" data-played="100"></div><span class="vr-when"><span class="vr-date">Thu 2 Oct</span><span class="vr-tod"><span class="vr-sep" aria-hidden="true">·</span><svg class="icon vr-clock" aria-hidden="true"><use href="#i-clock"/></svg>11:04 am</span></span><span class="badge badge--voice desktop-only"><span class="badge__label">1.5×</span></span></div></div><div class="row__dur vr-dur"><span>46:08</span><span class="vr-spd phone-only">1.5×</span></div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Play Lecture 5 — Heat engines"><svg class="icon icon--fill vr-glyph"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Rename" title="Rename"><svg class="icon icon--16"><use href="#i-edit"/></svg></button><button class="btn btn--icon btn--sm desktop-only vr-hover" aria-label="Move to music" title="Move to music"><svg class="icon icon--16"><use href="#i-music"/></svg></button><button class="btn btn--icon btn--sm vr-menu" aria-label="Rename, speed, move to music" title="Rename, speed, move to music" aria-haspopup="menu"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EMPTY -->
+  <section class="variant" aria-label="Empty state">
+    <div class="variant__label"><h3 class="t-16">Empty — no voice recordings found yet</h3><p>Fresh install or nothing classified as speech. The next step is inline.</p></div>
+    <div class="variant__box">
+      <div class="empty">
+        <div class="empty__icon"><svg class="icon"><use href="#i-mic"/></svg></div>
+        <div class="empty__title">No voice recordings yet</div>
+        <div class="empty__text">Recorder files, WhatsApp voice notes and lectures show up here after a scan. They're kept apart from your music and never play in shuffle.</div>
+        <div class="empty__actions">
+          <button class="btn btn--primary"><svg class="icon"><use href="#i-scan"/></svg>Scan for new</button>
+          <button class="btn btn--secondary"><svg class="icon"><use href="#i-folder"/></svg>Choose folders</button>
+        </div>
+        <div class="help num">Last scan: today 08:40<span class="vr-sep" aria-hidden="true">·</span>1,212 files<span class="vr-sep" aria-hidden="true">·</span>0 voice</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOADING -->
+  <section class="variant" aria-label="Loading state">
+    <div class="variant__label"><h3 class="t-16">Loading — sorting new files after a scan</h3><p>Live counters while the classifier runs; rows fill in as they are sorted.</p></div>
+    <div class="variant__box" aria-busy="true">
+      <div class="progress-line">
+        <div class="progress-line__meta"><span><strong>Sorting 640 of 1,212</strong> new files<span class="vr-sep" aria-hidden="true">·</span>14 voice so far<span class="vr-sep" aria-hidden="true">·</span>3 unsure</span><span>53%<span class="vr-sep" aria-hidden="true">·</span>about 1 min left</span></div>
+        <div class="progress progress--thick" style="--p:53%"><i></i></div>
+      </div>
+      <div class="vr-loadbar">
+        <button class="btn btn--secondary btn--sm is-disabled" disabled aria-disabled="true"><svg class="icon icon--16"><use href="#i-scan"/></svg>Scan for new</button>
+        <span class="help">Available again when this scan finishes. Recordings sorted so far can already play.</span>
+      </div>
+      <div class="list">
+        <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title" style="width:55%"></i><div class="cluster"><i class="skel skel-wave"></i><i class="skel skel--text" style="width:96px"></i></div></div><i class="skel skel--text" style="width:40px"></i></div>
+        <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title" style="width:70%"></i><div class="cluster"><i class="skel skel-wave"></i><i class="skel skel--text" style="width:80px"></i></div></div><i class="skel skel--text" style="width:40px"></i></div>
+        <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title" style="width:40%"></i><div class="cluster"><i class="skel skel-wave"></i><i class="skel skel--text" style="width:104px"></i></div></div><i class="skel skel--text" style="width:40px"></i></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="variant-grid">
+    <!-- NO RESULTS -->
+    <section class="variant" aria-label="No search results">
+      <div class="variant__label"><h3 class="t-16">Search — no matches</h3></div>
+      <div class="variant__box">
+        <div class="search vr-topsearch"><svg class="icon"><use href="#i-search"/></svg><span class="badge badge--voice vr-scope"><svg class="icon"><use href="#i-mic"/></svg>Voice</span><input class="search__input is-focus" type="search" value="budget meeting" aria-label="Search voice recordings"><button class="btn btn--icon btn--sm search__clear" aria-label="Clear search"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+        <div class="empty empty--compact">
+          <div class="empty__icon"><svg class="icon"><use href="#i-search"/></svg></div>
+          <div class="empty__title">No recordings match “budget meeting”</div>
+          <div class="empty__text">Search looks at names and dates, e.g. “lecture” or “14 Oct”. Unsorted files are in Needs review.</div>
+          <div class="empty__actions"><button class="btn btn--secondary btn--sm">Clear search</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REVIEW DONE -->
+    <section class="variant" aria-label="Review queue empty">
+      <div class="variant__label"><h3 class="t-16">Needs review — all sorted</h3></div>
+      <div class="card">
+        <div class="card__head"><div class="card__title">Needs review</div></div>
+        <div class="empty empty--compact">
+          <div class="empty__icon" style="background:var(--ok-soft);color:var(--ok)"><svg class="icon"><use href="#i-check-circle"/></svg></div>
+          <div class="empty__title">All sorted</div>
+          <div class="empty__text">Nothing unsure from the last scan. New files the classifier can't place will wait here.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- ERROR -->
+  <section class="variant" aria-label="Error states">
+    <div class="variant__label"><h3 class="t-16">Error — folder access lost, file missing</h3><p>The banner names the folder and the fix; the affected row says why it can't play.</p></div>
+    <div class="variant__box">
+      <div class="banner banner--danger">
+        <svg class="icon"><use href="#i-lock"/></svg>
+        <div class="banner__body"><div class="banner__title">Can't read /storage/emulated/0/Recordings</div><div class="banner__text">Storage access was turned off. 11 recordings from this folder can't play until you allow it again.</div></div>
+        <button class="btn btn--secondary btn--sm">Allow access</button>
+      </div>
+      <div class="list">
+        <div class="drow is-failed">
+          <span class="ring-wrap" style="width:var(--art-row);height:var(--art-row)"><svg class="icon" style="color:var(--danger)"><use href="#i-alert"/></svg></span>
+          <div class="drow__main">
+            <div class="drow__title">Interview — Priya, UX research</div>
+            <div class="drow__meta"><span class="reason">File moved or deleted</span><span class="sep"></span><span>last seen in /Recordings · 38:44</span></div>
+          </div>
+          <div class="drow__actions">
+            <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-folder"/></svg>Locate</button>
+            <button class="btn btn--ghost btn--sm">Remove</button>
+          </div>
+        </div>
+        <div class="drow is-failed">
+          <span class="ring-wrap" style="width:var(--art-row);height:var(--art-row)"><svg class="icon" style="color:var(--danger)"><use href="#i-alert"/></svg></span>
+          <div class="drow__main">
+            <div class="drow__title">Wedding toast practice</div>
+            <div class="drow__meta"><span class="reason">Couldn't move to music — app folder is read-only</span></div>
+          </div>
+          <div class="drow__actions">
+            <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-refresh"/></svg>Retry</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+// Deterministic waveform bars (same generator as _components.html)
+(function(){
+  function rnd(seed){ var s = seed * 9301 + 49297; return function(){ s = (s * 9301 + 49297) % 233280; return s / 233280; }; }
+  document.querySelectorAll('.wave[data-bars]').forEach(function(w){
+    var n = +w.dataset.bars, r = rnd(+w.dataset.seed || 1), played = +w.dataset.played || 0, frag = document.createDocumentFragment();
+    for (var i = 0; i < n; i++) {
+      var env = 0.35 + 0.65 * Math.abs(Math.sin(i / n * Math.PI * 2.3 + r()));
+      var h = Math.round(18 + 82 * env * (0.55 + 0.45 * r()));
+      var b = document.createElement('i'); b.style.setProperty('--h', h + '%');
+      if (i / n * 100 < played) b.classList.add('is-played');
+      frag.appendChild(b);
+    }
+    w.insertBefore(frag, w.firstChild);
+  });
+})();
+</script>
+</body>
+</html>

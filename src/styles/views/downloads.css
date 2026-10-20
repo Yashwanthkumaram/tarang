@@ -1,0 +1,110 @@
+/* Downloads screen (design/screens/downloads.html). Layout only: every colour, size and radius
+   comes from system.css tokens. Scoped to .view--downloads; review-only rules left out. */
+
+.dl-summary { display: flex; flex-direction: column; gap: var(--sp-5); }
+.dl-summary .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--sp-6); align-items: end; }
+.dl-summary .stats--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dl-summary .progress-line__meta > span:last-child { text-align: right; }
+.dl-stat-icon { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.dl-stat-icon .icon { width: var(--fs-20); height: var(--fs-20); }
+.dl-sections { display: flex; flex-direction: column; gap: var(--sp-8); }
+.dl-section .list { margin: 0 calc(var(--sp-2) * -1); }
+.dl-section .section-head { margin-bottom: var(--sp-1); }
+.dl-more { display: flex; justify-content: center; padding-top: var(--sp-2); }
+.view--downloads .drow__actions > .ring-wrap { width: var(--hit); height: var(--hit); flex: none; }
+.view--downloads .drow__main .progress { margin-top: 0; }
+.view--downloads .drow__meta .strong { color: var(--text); }
+.view--downloads .drow__title { font-size: var(--fs-14); color: var(--text); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dl-artist { color: var(--text-2); font-weight: var(--fw-regular); }
+.view--downloads .nw { white-space: nowrap; }
+.dl-ok { display: inline-flex; align-items: center; gap: var(--sp-1); color: var(--ok); font-weight: var(--fw-medium); }
+.dl-spacer { display: block; flex: none; width: var(--hit); height: var(--hit); }
+.dl-break { display: none; }
+.dl-glyph { fill: currentColor; stroke: currentColor; stroke-width: 2; }
+.view--downloads .drow__actions .dl-glyph { width: var(--fs-16); height: var(--fs-16); }
+.dl-danger { color: var(--danger); }
+.view--downloads .ring__fg.dl-ring-danger { stroke: var(--danger); }
+.dl-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2); margin-top: var(--sp-2); }
+.dl-storage { display: flex; align-items: center; gap: var(--sp-3); padding-top: var(--sp-4); border-top: var(--border-w) solid var(--border); }
+.dl-storage .progress > i { background: var(--text-2); }
+.dl-dock { position: sticky; bottom: 0; z-index: 4; display: flex; gap: var(--sp-2); margin-top: auto; padding: var(--sp-3) var(--gutter); background: var(--surface); border-top: var(--border-w) solid var(--border); }
+.dl-dock .btn { flex: 1 1 0; }
+.dl-dock .btn--primary { flex: 1.4 1 0; }
+.view--downloads .drow .art { flex: none; }
+.view--downloads .drow__meta a { color: inherit; text-decoration: underline; }
+
+/* Active rows: icons centre on the title+meta block; the bar spans to the actions column's right edge */
+.drow--split { grid-template-rows: auto auto auto; row-gap: var(--sp-1); }
+.drow--split > .art { grid-column: 1; grid-row: 1 / 4; align-self: center; }
+.drow--split .drow__main { display: contents; }
+.drow--split .drow__title { grid-column: 2; grid-row: 1; }
+.drow--split .drow__meta { grid-column: 2; grid-row: 2; }
+.drow--split .progress { grid-column: 2 / 4; grid-row: 3; margin-top: var(--sp-1); }
+.drow--split .drow__actions { grid-column: 3; grid-row: 1 / 3; align-self: center; }
+@media (min-width: 821px) {
+  .view--downloads .drow__actions { gap: var(--sp-2); }
+}
+
+/* Artist placement: in the title line above 600px; below 600px it leads the meta line */
+.dl-by, .dl-by-break, .dl-done-break { display: none; }
+.dl-line1 { display: contents; }
+@media (max-width: 599px) {
+  .view--downloads .drow .dl-artist { display: none; }
+  .view--downloads .drow__meta .dl-by { display: inline; }
+  .view--downloads .drow__meta .dl-by-break { display: block; flex-basis: 100%; height: 0; }
+  .view--downloads .drow__meta .sep.dl-by:has(+ .dl-by-break) { display: none; }
+  .view--downloads .drow__meta .dl-done-break { display: block; flex-basis: 100%; height: 0; }
+  .view--downloads .drow__meta .dl-done-sep { display: none; }
+  .view--downloads .drow:not(.drow--split) .drow__meta { display: flex; flex-wrap: wrap; white-space: normal; column-gap: var(--sp-2); row-gap: 0; }
+  .view--downloads .drow:not(.drow--split) .drow__meta > * + * { margin-left: 0; }
+  .view--downloads .drow__meta .dl-by { color: var(--text-2); }
+  /* Active / paused rows: "Artist · 5.1 / 8.2 MB" stays on line 1 (a long artist name
+     ellipsizes), speed · time left goes to line 2 — two meta lines as designed. */
+  .view--downloads .drow__meta .dl-line1 { display: inline-flex; align-items: baseline; gap: var(--sp-2); min-width: 0; max-width: 100%; }
+  .view--downloads .dl-line1 > .dl-by:not(.sep) { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .view--downloads .dl-line1 > .sep, .view--downloads .dl-line1 > .nw { flex: none; }
+}
+.dl-status-text, .view--downloads .menu__hint { color: var(--text-2); }
+
+/* Skeleton */
+.skel-stat { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.skel-stat .skel--title { height: var(--fs-28); width: var(--sp-12); }
+.skel-stat--wide .skel--title { width: calc(var(--sp-16) * 2); }
+.skel-stat .skel--text { width: var(--sp-16); }
+.skel--btn-sm { width: var(--sp-16); height: var(--hit); }
+
+@media (max-width: 820px) {
+  .dl-wide { display: none; }
+  .dl-summary { gap: var(--sp-4); padding: var(--sp-4); }
+  .dl-summary .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
+  .dl-summary .progress-line__meta { flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); }
+  .dl-stat-icon { gap: var(--sp-1); }
+  .dl-stat-icon .icon { width: var(--fs-16); height: var(--fs-16); }
+  .dl-sections { gap: var(--sp-6); }
+  .dl-section .list { margin: 0 calc(var(--sp-1) * -1); }
+  .dl-cut { display: none; }
+  .dl-section .section-head h3 { display: flex; align-items: baseline; gap: var(--sp-2); }
+  .dl-section .section-head__sub { display: inline; }
+
+  .view--downloads .drow { grid-template-columns: var(--art-row) minmax(0, 1fr) auto; column-gap: var(--sp-3); padding: var(--sp-2) var(--sp-1); }
+  .view--downloads .drow__actions { grid-column: 3; grid-row: 1; gap: 0; }
+  .view--downloads .drow--split .drow__actions { grid-row: 1 / 3; }
+  .drow--split .drow__meta { display: flex; flex-wrap: wrap; white-space: normal; column-gap: var(--sp-2); row-gap: 0; }
+  .drow--split .drow__meta > * + * { margin-left: 0; }
+  .drow--split .dl-break { display: block; flex-basis: 100%; height: 0; }
+  .drow--split .sep.dl-sep-break { display: none; }
+  .view--downloads .drow.is-failed .drow__meta { white-space: normal; }
+  .drow--done .drow__meta { display: flex; flex-wrap: wrap; white-space: normal; column-gap: var(--sp-2); row-gap: 0; }
+  .drow--done .drow__meta > * + * { margin-left: 0; }
+  .dl-dock { margin-top: 0; }
+  .view--downloads .page { padding-bottom: var(--sp-4); }
+  .view--downloads .banner .btn { height: var(--touch-min); }
+  .dl-empty-actions { flex-direction: column; align-self: stretch; }
+  .dl-empty-actions .btn { height: var(--touch-min); }
+  .dl-storage { padding-top: var(--sp-3); gap: var(--sp-2); }
+  .dl-summary .dl-storage .progress-line__meta { flex-wrap: nowrap; white-space: nowrap; }
+  .skel-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
+  .skel-stat .skel--title { height: var(--fs-20); width: var(--sp-8); }
+  .skel-stat .skel--text { width: var(--sp-12); max-width: 100%; }
+  .skel--btn-sm { width: var(--hit); height: var(--hit); border-radius: 50%; }
+}

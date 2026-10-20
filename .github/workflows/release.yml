@@ -1,0 +1,148 @@
+# Builds every platform for a version tag and publishes one GitHub release (D45).
+#
+#   scripts/release.sh 0.2.0     # bumps versions, commits, tags v0.2.0 and pushes
+#
+# Installed apps update from the published release: desktop through Tauri's updater
+# (latest.json, signed with TAURI_SIGNING_PRIVATE_KEY), Android by downloading the APK
+# (signed with the release keystore; Android refuses an APK signed with another key).
+#
+# Secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD,
+#          ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re)build, e.g. v0.2.0'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Check the tag matches the app version
+        run: |
+          v=$(jq -r .version src-tauri/tauri.conf.json)
+          [ "v$v" = "$TAG" ] || { echo "tag $TAG but tauri.conf.json has $v"; exit 1; }
+      - name: Create draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --draft --title "Tarang $TAG" --generate-notes
+          fi
+          echo "id=$(gh api repos/${{ github.repository }}/releases --jq ".[] | select(.tag_name==\"$TAG\") | .id" | head -1)" >> "$GITHUB_OUTPUT"
+
+  desktop:
+    needs: create-release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: '--bundles nsis'
+          - platform: ubuntu-22.04
+            args: '--bundles appimage,deb'
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+    runs-on: ${{ matrix.platform }}
+    # macOS is optional: an unsigned build that may fail without blocking the release.
+    continue-on-error: ${{ matrix.platform == 'macos-latest' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - name: Linux packages
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          includeUpdaterJson: true
+          args: ${{ matrix.args }}
+
+  android:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.2.12479018" >/dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - name: Release keystore
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/tarang-release.jks"
+          echo "TARANG_KEYSTORE_PATH=$RUNNER_TEMP/tarang-release.jks" >> "$GITHUB_ENV"
+      - name: Build APK
+        env:
+          TARANG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TARANG_KEY_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TARANG_KEY_ALIAS: tarang
+        run: npx tauri android build --target aarch64 --apk
+      - name: Upload APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          apk=$(ls src-tauri/gen/android/app/build/outputs/apk/universal/release/*.apk | head -1)
+          out="Tarang_${TAG#v}_android-universal.apk"
+          cp "$apk" "$out"
+          gh release upload "$TAG" "$out" --clobber
+
+  publish:
+    needs: [create-release, desktop, android]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish the release (installed apps see it from now on)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --repo "${{ github.repository }}" --draft=false --latest

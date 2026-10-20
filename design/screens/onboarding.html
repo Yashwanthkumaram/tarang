@@ -1,0 +1,974 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Player — Onboarding</title>
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<link rel="stylesheet" href="../system.css">
+<style>
+  /* ---- Onboarding screen. Tokens, the .app--setup shell and shared parts come from system.css ----
+     First run uses the setup shell (no sidebar / player bar / tabs / mini player): nothing is playable yet,
+     and navigation appears only after "Start listening". Afterwards, import lives ONLY in Settings. */
+  body { overflow-x: hidden; }
+  .frame { position: relative; }
+  .frame-sep { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--gutter); background: var(--surface-3); border-top: 1px solid var(--border-strong); border-bottom: 1px solid var(--border-strong); }
+  .frame-sep .eyebrow { color: var(--text-2); }
+
+  /* Top bar: brand · step indicator · skip */
+  .ob-topbar { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); column-gap: var(--sp-4); }
+  .ob-topbar .topbar__title { margin-right: 0; min-width: 0; }
+  .ob-topbar > :last-child { justify-self: end; }
+  .ob-skip { min-width: var(--hit); }
+  .ob-steps { display: flex; align-items: center; justify-content: center; gap: var(--sp-3); font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  .ob-page { flex: 1 0 auto; }
+  @media (min-width: 1024px) { .ob-page { justify-content: center; padding-top: var(--sp-8); padding-bottom: var(--sp-8); } }
+
+  .ob .seg__btn { border: 1px solid transparent; }
+  .ob .seg__btn.is-active { background: var(--surface); border-color: var(--border-strong); }
+  :root[data-theme="dark"] .ob .seg__btn.is-active { background: var(--surface-3); border-color: var(--text-3); color: var(--text); }
+
+  .btn.is-off, .btn.is-off:disabled { background: var(--surface-3); color: var(--text-3); border-color: transparent; opacity: 1; box-shadow: none; pointer-events: none; }
+  .ob { width: 100%; max-width: var(--content-narrow); margin: 0 auto; display: flex; flex-direction: column; gap: var(--sp-6); }
+  .ob-head { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .ob-head h1 { font-size: var(--fs-28); }
+  .ob-head p { color: var(--text-2); max-width: var(--measure); }
+  .ob-foot { position: sticky; bottom: 0; z-index: 5; margin-top: auto; padding: var(--sp-3) var(--gutter) calc(var(--sp-3) + var(--safe-bottom)); background: color-mix(in srgb, var(--page) 92%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--border); }
+  .ob-foot__inner { width: 100%; max-width: var(--content-narrow); margin: 0 auto; display: flex; align-items: center; gap: var(--sp-3); }
+  .ob-foot__hint { flex: 1 1 auto; min-width: 0; font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; text-wrap: balance; }
+  .ob-foot__actions { display: flex; align-items: center; gap: var(--sp-2); flex: none; margin-left: auto; }
+  .ob-foot--static { position: static; margin: 0; padding: var(--sp-3) 0 0; background: transparent; backdrop-filter: none; }
+
+  /* Welcome hero */
+  .hero { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--sp-4); padding-top: var(--sp-4); width: 100%; overflow-x: clip; }
+  .hero h1 { font-size: var(--fs-36); max-width: var(--measure); }
+  .hero p { color: var(--text-2); font-size: var(--fs-16); max-width: var(--measure); }
+  .hero-fan { display: flex; align-items: flex-end; justify-content: center; height: calc(var(--art-fan) + var(--sp-6)); padding-bottom: var(--sp-2); }
+  .hero-fan .art { --s: 1; width: calc(var(--art-fan) * var(--s)); height: calc(var(--art-fan) * var(--s)); margin-left: calc(var(--art-fan) * -.16); border-radius: var(--r-card); box-shadow: var(--shadow-2); }
+  .hero-fan .art:first-child { margin-left: 0; }
+  .hero-fan .art:nth-child(1) { --s: .66; transform: rotate(-12deg) translateY(6%); z-index: 0; }
+  .hero-fan .art:nth-child(2) { --s: .8;  transform: rotate(-6deg); z-index: 1; }
+  .hero-fan .art:nth-child(3) { transform: translateY(-10%); z-index: 2; box-shadow: var(--shadow-3); }
+  .hero-fan .art:nth-child(4) { --s: .8;  transform: rotate(6deg); z-index: 1; }
+  .hero-fan .art:nth-child(5) { --s: .66; transform: rotate(12deg) translateY(6%); z-index: 0; }
+  .art > .icon { position: relative; inset: auto; width: 44%; height: 44%; }
+  .values { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .values li { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
+  .src-mark--accent { background: var(--accent-soft); color: var(--accent-text); }
+  .src-mark--ok { background: var(--ok-soft); color: var(--ok); }
+  .values__title { font-weight: var(--fw-semibold); }
+  .values__text { font-size: var(--fs-13); color: var(--text-2); }
+
+  /* Storage permission */
+  .perm-row { display: flex; align-items: center; gap: var(--sp-3); min-height: var(--hit); padding: 0 var(--sp-3); background: var(--surface-2); border-radius: var(--r-ctl); font-size: var(--fs-13); color: var(--text-2); }
+  .perm-row__text { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .perm-row--wrap { padding: var(--sp-2) var(--sp-3); }
+  .perm-row--wrap .perm-row__text { white-space: normal; }
+  .perm { display: flex; align-items: center; gap: var(--sp-3); }
+  .perm__body { flex: 1; min-width: 0; }
+  .perm__title { font-weight: var(--fw-semibold); }
+  .perm__sub { font-size: var(--fs-13); color: var(--text-2); }
+  .perm__actions { margin-top: var(--sp-4); }
+
+  /* Checkable rows: folders (step 2) and playlists found at a link (step 4) */
+  .frows { display: flex; flex-direction: column; }
+  .frow { display: grid; grid-template-columns: auto var(--art-row) minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); min-height: var(--row-h); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); cursor: pointer; text-align: left; width: 100%; }
+  .frow:last-child { border-bottom: 0; }
+  .frow:hover, .frow.is-hover { background: var(--surface-2); }
+  .frow:focus-within, .frow.is-focus { outline: 2px solid var(--focus); outline-offset: -2px; }
+  .frow.is-disabled { pointer-events: none; }
+  .frow.is-disabled .frow__title, .frow.is-disabled .frow__count { color: var(--text-2); }
+  .frow.is-disabled .frow__path { color: var(--text-3); }
+  .frow.is-disabled .src-mark { background: var(--surface-3); color: var(--text-3); }
+  .frow__main { min-width: 0; display: flex; flex-direction: column; }
+  .frow__title { font-weight: var(--fw-medium); display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .frow__title > span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .frow__path { font-size: var(--fs-13); color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .frow__count { text-align: right; font-variant-numeric: tabular-nums; font-size: var(--fs-13); white-space: nowrap; }
+  .frow__count b { display: block; font-weight: var(--fw-semibold); color: var(--text); font-size: var(--fs-14); }
+  .frow__count span { color: var(--text-2); }
+  .frow--add { grid-template-columns: auto minmax(0, 1fr); color: var(--accent-text); font-weight: var(--fw-medium); }
+  .frow--add .src-mark { background: var(--accent-soft); color: var(--accent-text); }
+  .frow--plain { grid-template-columns: var(--art-row) minmax(0, 1fr) auto; cursor: default; }
+  .ob-toggle .srow { min-height: 0; padding: 0; border: 0; }
+
+  /* Background device scan — compact strip carried from step 2 onward */
+  .scan-strip { display: flex; align-items: center; gap: var(--sp-3); }
+  .scan-strip .progress-line { flex: 1; min-width: 0; }
+
+  /* Step 3 · stream vs download explainer */
+  .demo { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .demo .input-wrap .input { pointer-events: none; }
+  .drow2 { display: grid; grid-template-columns: var(--art-row) minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); min-height: var(--row-h); padding: var(--sp-2) var(--sp-2); border-radius: var(--r-ctl); }
+  .drow2:hover, .drow2.is-hover { background: var(--surface-2); }
+  .drow2__main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .drow2__title { font-weight: var(--fw-medium); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .drow2__sub { font-size: var(--fs-13); color: var(--text-2); display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+  .drow2__sub > span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+  .drow2__sub .badge { flex: none; }
+  .drow2__acts { display: flex; align-items: center; gap: var(--sp-1); }
+  .callout { font-size: var(--fs-12); color: var(--text-2); display: flex; align-items: center; gap: var(--sp-1); }
+  .callout b { color: var(--text); font-weight: var(--fw-semibold); }
+  .legend2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+  .legend2 > div { display: flex; gap: var(--sp-3); align-items: flex-start; padding: var(--sp-3) var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-card); }
+  .legend2__title { font-weight: var(--fw-semibold); display: flex; align-items: center; gap: var(--sp-2); }
+  .legend2__text { font-size: var(--fs-13); color: var(--text-2); }
+
+  /* Step 4 · platform cards (radio group) */
+  .plats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+  .plat { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: var(--sp-3); width: 100%; min-height: var(--hit); text-align: left; font: inherit; color: inherit; }
+  .plat__check { position: absolute; top: var(--sp-3); right: var(--sp-3); width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--border-strong); display: grid; place-items: center; color: var(--on-accent); }
+  .plat.is-selected .plat__check { background: var(--accent); border-color: var(--accent); }
+  .plat__check .icon { width: 12px; height: 12px; stroke-width: 3; }
+  .plat__title { font-weight: var(--fw-semibold); }
+  .plat__sub { font-size: var(--fs-13); color: var(--text-2); }
+  .plat:focus-visible, .plat.is-focus { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .plat.is-disabled { pointer-events: none; background: var(--surface-2); }
+  .plat.is-disabled .plat__title { color: var(--text-2); }
+  .plat.is-disabled .plat__sub { color: var(--text-3); }
+  .plat.is-disabled .src-mark { background: var(--surface-3); color: var(--text-3); }
+  .link { color: var(--accent-text); font-weight: var(--fw-medium); text-decoration: underline; text-underline-offset: 2px; }
+  .link:hover { text-decoration-thickness: 2px; }
+  .or-line { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-12); color: var(--text-2); }
+  .or-line::before, .or-line::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+  .dropzone { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px dashed var(--border-strong); border-radius: var(--r-card); background: var(--surface); }
+  .dropzone__body { flex: 1 1 auto; min-width: 0; }
+  .dropzone__title { font-weight: var(--fw-semibold); }
+  .dropzone__sub { font-size: var(--fs-13); color: var(--text-2); }
+
+  /* Step 4 · match list + summary */
+  .mstats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-3); }
+  .mstat { padding: var(--sp-3) var(--sp-4); border-radius: var(--r-card); background: var(--surface); border: 1px solid var(--border); }
+  .mstat .stat__num { font-size: var(--fs-20); font-variant-numeric: tabular-nums; }
+  .mstat--ok .stat__num { color: var(--ok); }
+  .mstat--warn .stat__num { color: var(--warn); }
+  .mstat--danger .stat__num { color: var(--danger); }
+  .mrows { display: flex; flex-direction: column; }
+  .mrow { display: grid; grid-template-columns: var(--art-row) minmax(0, 1fr) auto; align-items: center; gap: var(--sp-3); min-height: var(--row-h); padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); }
+  .mrow:last-child { border-bottom: 0; }
+  .mrow__main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .mrow__title { font-weight: var(--fw-medium); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mrow__sub { font-size: var(--fs-13); color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mrow__end { display: flex; align-items: center; gap: var(--sp-2); }
+  .mrow.is-pending .mrow__title { color: var(--text-2); }
+  .art--empty { background: var(--surface-3); color: var(--text-3); text-shadow: none; }
+
+  .done-head { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--sp-3); }
+  .done-head h1 { font-size: var(--fs-28); }
+  .done-head p { color: var(--text-2); max-width: var(--measure); }
+  .done-mark { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; background: var(--ok-soft); color: var(--ok); }
+  .done-mark .icon { width: 32px; height: 32px; }
+  .mosaic { display: grid; grid-template-columns: 1fr 1fr; width: 56px; height: 56px; border-radius: var(--r-art); overflow: hidden; flex: none; }
+  .mosaic .art { width: 100%; height: 100%; border-radius: 0; font-size: var(--fs-12); }
+  .frow--plain.frow--pl { grid-template-columns: 56px minmax(0, 1fr) auto; }
+
+  /* States gallery */
+  .banner__actions { flex: none; gap: var(--sp-2); }
+  .banner:has(.banner__actions) { flex-wrap: wrap; }
+  .banner:has(.banner__actions) .banner__body { flex: 1 1 calc(100% - 20px - var(--sp-3)); }
+  .banner .banner__actions { margin-left: calc(20px + var(--sp-3)); }
+  .states { padding: var(--sp-10) var(--gutter) var(--sp-16); width: 100%; max-width: var(--content-max); margin: 0 auto; display: flex; flex-direction: column; gap: var(--sp-6); }
+  .states__head { display: flex; flex-direction: column; gap: var(--sp-2); padding-bottom: var(--sp-4); border-bottom: 1px solid var(--border); }
+  .states__head p { color: var(--text-2); max-width: var(--content-narrow); }
+  .states__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-6); align-items: start; }
+  .states__group { grid-column: 1 / -1; padding-top: var(--sp-4); }
+  .state { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+  .state--wide { grid-column: 1 / -1; }
+  .state__box { display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-4); background: var(--page); border: 1px dashed var(--border-strong); border-radius: var(--r-card); }
+  .state__box .plats { grid-template-columns: minmax(0, 1fr); }
+  .state__box .plat { flex-direction: row; align-items: center; padding-right: calc(var(--sp-4) + 24px); }
+  .state__box .plat__check, .interact .plat__check { top: 50%; transform: translateY(-50%); }
+  .interact .plat { flex-direction: row; align-items: center; padding-right: calc(var(--sp-4) + 24px); }
+  .ob-skel { padding: var(--sp-2); }
+  .interact { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); align-items: start; }
+  .interact__cap { font-size: var(--fs-12); color: var(--text-2); margin-bottom: var(--sp-2); }
+
+  @media (max-width: 820px) {
+    .ob-topbar .topbar__title { font-size: var(--fs-16); }
+    .ob-skip { padding: 0 var(--sp-2); }
+    .ob { gap: var(--sp-5); }
+    .ob-foot__inner { flex-wrap: wrap; }
+    .ob-foot__hint { flex-basis: 100%; text-align: center; font-size: var(--fs-12); }
+    .ob-foot__actions { flex: 1 1 100%; margin-left: 0; }
+    .ob-foot__actions .btn--primary { flex: 1 1 auto; }
+    .ob-foot__actions .btn { min-width: 0; }
+    .ob-foot__actions .btn--primary { white-space: normal; text-align: center; height: auto; min-height: 48px; }
+    .demo .drow2__title { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 1.3; }
+    .hero { padding-top: 0; gap: var(--sp-3); }
+    .hero h1 { font-size: var(--fs-28); }
+    .hero p { font-size: var(--fs-14); }
+    .seg--block .seg__btn .icon { display: none; }
+    .values li { padding: var(--sp-3); gap: var(--sp-3); }
+    .frow { padding: var(--sp-2); }
+    .frow__count b { font-size: var(--fs-13); }
+    .legend2 { grid-template-columns: minmax(0, 1fr); }
+    .legend2 > div { padding: var(--sp-3); }
+    .drow2__acts .btn--icon { width: 44px; height: 44px; }
+    .drow2__acts { gap: 0; }
+    .drow2__sub { flex-direction: column; align-items: flex-start; gap: 2px; }
+    .drow2__sub > span:first-child { max-width: 100%; }
+    .plats { grid-template-columns: minmax(0, 1fr); gap: var(--sp-2); }
+    .plat { flex-direction: row; align-items: center; min-height: 64px; padding-right: calc(var(--sp-4) + 24px); }
+    .plat__check { top: 50%; transform: translateY(-50%); }
+    .plat .src-mark--lg { flex: none; }
+    .mstats { gap: var(--sp-2); }
+    .mstat { padding: var(--sp-2) var(--sp-3); }
+    .mrow { padding: var(--sp-2); }
+    .mrow .badge__label { display: none; }
+    .mrow .badge { padding: 0; width: 28px; height: 28px; justify-content: center; border-radius: 50%; }
+    .mrow__end .btn { min-height: var(--hit); }
+    .dropzone { flex-wrap: wrap; }
+    .dropzone__body { flex: 1 1 calc(100% - 48px - var(--sp-3)); }
+    .dropzone .btn { flex: 1 1 100%; min-height: var(--hit); margin-left: 0; }
+    .states { padding-bottom: var(--sp-12); }
+    .states__grid, .interact { grid-template-columns: minmax(0, 1fr); }
+    .banner .banner__actions { margin-left: calc(20px + var(--sp-3)); }
+    .banner .banner__actions .btn { margin-left: 0; }
+    .pastebox .btn--icon.btn--sm { width: var(--hit); height: var(--hit); }
+    .ob .help .link { display: inline-block; padding-block: 14px; margin-block: -14px; }
+    .input { min-height: var(--hit); }
+    .ob-folders-all { min-height: var(--hit); }
+  }
+  .input { padding-right: var(--sp-4); text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+
+<!-- ============ Icon sprite (inline SVG, stroke 2) ============ -->
+<svg id="sprite" xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4h3v16H4zM10 4h3v16h-3zM15.5 5.2l2.9-.8 4.1 14.7-2.9.8z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 7h9M19 7h1M4 17h3M13 17h7"/><circle cx="16" cy="7" r="2.5"/><circle cx="10" cy="17" r="2.5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M2 12h2M6 8v8M10 5v14M14 8v8M18 10v4M22 12h0"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17h.01"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="M22.6 16.6A5 5 0 0 0 18 9h-1.3A8 8 0 0 0 5 6.3M3 3l18 18M7 17h11M3.2 12.8A5 5 0 0 0 7 19"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-storage" viewBox="0 0 24 24"><path d="M4 14h16v6H4zM4 14l2.5-8h11L20 14M8 17h.01"/></symbol>
+  <symbol id="i-playlist" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h7M19 9v9M16 13h6"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M10 13h4M10 17h4"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="i-spotify" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M6 9.3c4.2-1.2 8.4-.9 12 1.1M7 12.6c3.4-.9 6.8-.6 9.8 1M8 15.6c2.6-.6 5.2-.4 7.6.8"/></symbol>
+  <symbol id="i-ytm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="5.5"/><path d="M10.5 9.5v5l4.2-2.5z"/></symbol>
+  <symbol id="i-sc" viewBox="0 0 24 24"><path d="M3 15v3M6 12v6M9 10v8M12 7v11M14 18h4.5a3.5 3.5 0 0 0 .5-7 5 5 0 0 0-5-4.5V18"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></symbol>
+</svg>
+
+<!-- =====================================================================
+     FRAME 1 · Step 1 of 4 — Welcome
+     ===================================================================== -->
+<div class="frame" id="step-1">
+<div class="app app--setup">
+  <div class="main">
+    <header class="topbar ob-topbar">
+      <div class="topbar__title topbar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span><span class="desktop-only">Offline Player</span><span class="phone-only">Set up</span></div>
+      <div class="ob-steps"><div class="dots" aria-hidden="true"><i class="is-active"></i><i></i><i></i><i></i></div><span class="ob-steps__label desktop-only">Step 1 of 4</span><span class="ob-steps__label phone-only"><span class="sr-only">Step </span>1/4</span></div>
+      <button class="btn btn--ghost btn--sm ob-skip">Skip setup</button>
+    </header>
+
+    <div class="page ob-page">
+      <div class="ob">
+        <div class="hero">
+          <div class="hero-fan" aria-hidden="true">
+            <div class="art art--4"><svg class="icon"><use href="#i-search"/></svg></div>
+            <div class="art art--2"><svg class="icon"><use href="#i-heart"/></svg></div>
+            <div class="art art--1"><svg class="icon icon--fill"><use href="#i-play"/></svg></div>
+            <div class="art art--3"><svg class="icon"><use href="#i-download"/></svg></div>
+            <div class="art art--6"><svg class="icon"><use href="#i-offline"/></svg></div>
+          </div>
+          <h1>Your music, online or off.</h1>
+          <p>Search YouTube Music and stream anything. Download what you want to keep, and it plays with no connection at all.</p>
+        </div>
+        <ul class="values">
+          <li><span class="src-mark src-mark--accent"><svg class="icon"><use href="#i-search"/></svg></span><div><div class="values__title">Search and stream YouTube Music</div><div class="values__text">Songs, albums and artists. Streams are cached briefly, then cleared.</div></div></li>
+          <li><span class="src-mark src-mark--ok"><svg class="icon"><use href="#i-download"/></svg></span><div><div class="values__title">Download to play offline</div><div class="values__text">One tap keeps a song, album or playlist on this device.</div></div></li>
+          <li><span class="src-mark src-mark--local"><svg class="icon"><use href="#i-playlist"/></svg></span><div><div class="values__title">Bring your playlists with you</div><div class="values__text">Optional last step: import from Spotify, YouTube Music or SoundCloud.</div></div></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="ob-foot">
+      <div class="ob-foot__inner">
+        <div class="ob-foot__hint">4 short steps · about a minute · change anything later in Settings</div>
+        <div class="ob-foot__actions"><button class="btn btn--primary btn--lg">Get started<svg class="icon"><use href="#i-arrow-right"/></svg></button></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="frame-sep"><span class="eyebrow">Step 2 of 4 · Storage permission (phone) + music folders on this device</span></div>
+
+<!-- =====================================================================
+     FRAME 2 · Step 2 of 4 — Device music
+     ===================================================================== -->
+<div class="frame" id="step-2">
+<div class="app app--setup">
+  <div class="main">
+    <header class="topbar ob-topbar">
+      <div class="topbar__title topbar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span><span class="desktop-only">Offline Player</span><span class="phone-only">Set up</span></div>
+      <div class="ob-steps"><div class="dots" aria-hidden="true"><i></i><i class="is-active"></i><i></i><i></i></div><span class="ob-steps__label desktop-only">Step 2 of 4</span><span class="ob-steps__label phone-only"><span class="sr-only">Step </span>2/4</span></div>
+      <button class="btn btn--ghost btn--sm ob-skip">Skip setup</button>
+    </header>
+
+    <div class="page ob-page">
+      <div class="ob">
+        <div class="ob-head">
+          <div class="eyebrow">Music already on this device</div>
+          <h1>Add songs you already have</h1>
+          <p>Pick folders to scan; they join your Library and play offline. Voice recordings are kept separate from music.</p>
+        </div>
+
+        <div class="perm-row phone-only">
+          <svg class="icon icon--16"><use href="#i-lock"/></svg>
+          <span class="perm-row__text">Storage access allowed</span>
+          <span class="badge badge--ok"><svg class="icon"><use href="#i-check-circle"/></svg>All files</span>
+        </div>
+
+        <div class="field">
+          <div class="between"><span class="label">Scan</span><span class="t-13 muted">Counted just now</span></div>
+          <div class="seg seg--block" role="radiogroup" aria-label="Scan mode">
+            <button class="seg__btn is-active" role="radio" aria-checked="true"><svg class="icon icon--16"><use href="#i-folder"/></svg>Selected folders</button>
+            <button class="seg__btn" role="radio" aria-checked="false"><svg class="icon icon--16"><use href="#i-device"/></svg>Whole device</button>
+            <button class="seg__btn" role="radio" aria-checked="false"><svg class="icon icon--16"><use href="#i-storage"/></svg>App folder</button>
+          </div>
+        </div>
+
+        <div class="card card--flush">
+          <div class="card__head card__head--flush">
+            <div><div class="card__title">Folders</div><div class="card__sub num">3 of 4 selected · 1,308 audio files found · 8.6 GB</div></div>
+            <button class="btn btn--ghost btn--sm ob-folders-all">Select all</button>
+          </div>
+          <div class="frows">
+            <label class="frow">
+              <span class="check"><input type="checkbox" checked aria-label="Include Music"></span>
+              <span class="src-mark src-mark--local"><svg class="icon"><use href="#i-folder"/></svg></span>
+              <div class="frow__main"><div class="frow__title">Music</div><div class="frow__path"><span class="desktop-only">~/Music</span><span class="phone-only">Internal storage › Music</span></div></div>
+              <div class="frow__count"><b>1,204 files</b><span>7.8 GB</span></div>
+            </label>
+            <label class="frow">
+              <span class="check"><input type="checkbox" checked aria-label="Include Downloads"></span>
+              <span class="src-mark src-mark--local"><svg class="icon"><use href="#i-download"/></svg></span>
+              <div class="frow__main"><div class="frow__title">Downloads</div><div class="frow__path"><span class="desktop-only">~/Downloads</span><span class="phone-only">Internal storage › Download</span></div></div>
+              <div class="frow__count"><b>86 files</b><span>412 MB</span></div>
+            </label>
+            <label class="frow">
+              <span class="check"><input type="checkbox" checked aria-label="Include Recordings"></span>
+              <span class="src-mark src-mark--voice"><svg class="icon"><use href="#i-mic"/></svg></span>
+              <div class="frow__main"><div class="frow__title"><span>Recordings</span><span class="badge badge--voice badge--dot" title="Voice recordings"><span class="badge__label">Voice</span></span></div><div class="frow__path"><span class="desktop-only">~/Recordings</span><span class="phone-only">Internal storage › Recordings</span></div></div>
+              <div class="frow__count"><b>18 files</b><span>340 MB</span></div>
+            </label>
+            <label class="frow">
+              <span class="check"><input type="checkbox" aria-label="Include Podcasts"></span>
+              <span class="src-mark src-mark--local"><svg class="icon"><use href="#i-folder"/></svg></span>
+              <div class="frow__main"><div class="frow__title">Podcasts</div><div class="frow__path"><span class="desktop-only">~/Podcasts</span><span class="phone-only">Internal storage › Podcasts</span></div></div>
+              <div class="frow__count"><b>64 files</b><span>2.3 GB</span></div>
+            </label>
+            <button class="frow frow--add" type="button">
+              <span class="src-mark"><svg class="icon"><use href="#i-plus"/></svg></span>
+              <span class="truncate">Add another folder</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="card ob-toggle">
+          <div class="srow">
+            <div class="srow__main"><div class="srow__title">Classify voice recordings</div><div class="srow__sub">Memos and lectures go to Voice recordings, not shuffle. Unsure files are queued for your review.</div></div>
+            <label class="toggle"><input type="checkbox" checked aria-label="Classify voice recordings"><span class="toggle__track"></span></label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ob-foot">
+      <div class="ob-foot__inner">
+        <div class="ob-foot__hint">3 folders · 1,308 files · scans in the background (~40 s) while you continue</div>
+        <div class="ob-foot__actions">
+          <button class="btn btn--ghost">Not now</button>
+          <button class="btn btn--primary btn--lg"><svg class="icon"><use href="#i-scan"/></svg>Scan 3 folders</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="frame-sep"><span class="eyebrow">Step 3 of 4 · Search YouTube Music, then stream or download</span></div>
+
+<!-- =====================================================================
+     FRAME 3 · Step 3 of 4 — Search, stream or download
+     ===================================================================== -->
+<div class="frame" id="step-3">
+<div class="app app--setup">
+  <div class="main">
+    <header class="topbar ob-topbar">
+      <div class="topbar__title topbar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span><span class="desktop-only">Offline Player</span><span class="phone-only">Set up</span></div>
+      <div class="ob-steps"><div class="dots" aria-hidden="true"><i></i><i></i><i class="is-active"></i><i></i></div><span class="ob-steps__label desktop-only">Step 3 of 4</span><span class="ob-steps__label phone-only"><span class="sr-only">Step </span>3/4</span></div>
+      <button class="btn btn--ghost btn--sm ob-skip">Skip setup</button>
+    </header>
+
+    <div class="page ob-page">
+      <div class="ob">
+        <div class="ob-head">
+          <div class="eyebrow">How it works</div>
+          <h1>Search, then stream or download</h1>
+          <p>Every song from YouTube Music can play right away or be kept on this device. You always see which is which.</p>
+        </div>
+
+        <!-- Example search with the two row states -->
+        <div class="card demo" aria-label="Example search">
+          <div class="input-wrap"><svg class="icon"><use href="#i-search"/></svg><input class="input input--with-icon" value="fred again" aria-label="Example search" tabindex="-1" readonly></div>
+          <div>
+            <div class="drow2">
+              <div class="art art--2"><span>AL</span></div>
+              <div class="drow2__main"><div class="drow2__title">Marea (we’ve lost dancing)</div><div class="drow2__sub"><span>Fred again..<span class="desktop-only">, The Blessed Madonna</span></span><span class="badge badge--stream"><svg class="icon"><use href="#i-stream"/></svg><span class="badge__label">Streaming</span></span></div></div>
+              <div class="drow2__acts">
+                <button class="btn btn--icon btn--sm like" aria-label="Like Marea"><svg class="icon icon--16"><use href="#i-heart"/></svg></button>
+                <button class="btn btn--icon btn--sm desktop-only" aria-label="Download Marea"><svg class="icon icon--16"><use href="#i-download"/></svg></button>
+                <button class="btn btn--icon btn--sm btn--secondary" aria-label="Stream Marea"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button>
+              </div>
+            </div>
+            <div class="drow2">
+              <div class="art art--1"><span>AL</span></div>
+              <div class="drow2__main"><div class="drow2__title">Delilah (pull me out of this)</div><div class="drow2__sub"><span>Fred again..</span><span class="badge badge--ok"><svg class="icon"><use href="#i-check"/></svg><span class="badge__label">Downloaded</span></span></div></div>
+              <div class="drow2__acts">
+                <button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button>
+                <button class="btn btn--icon btn--sm btn--secondary" aria-label="Play Delilah"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="legend2">
+          <div><span class="src-mark src-mark--local"><svg class="icon"><use href="#i-stream"/></svg></span><div><div class="legend2__title">Streaming</div><div class="legend2__text">Plays over the internet. Audio is cached while it plays, then cleared.</div></div></div>
+          <div><span class="src-mark src-mark--ok"><svg class="icon"><use href="#i-download"/></svg></span><div><div class="legend2__title">Downloaded</div><div class="legend2__text">Saved on this device. Plays with no connection. Like it to find it fast.</div></div></div>
+        </div>
+
+        <div class="field">
+          <div class="between"><span class="label">Download quality</span><span class="t-13 muted num">≈ 8 MB per song</span></div>
+          <div class="seg seg--block" role="radiogroup" aria-label="Download quality">
+            <button class="seg__btn is-active" role="radio" aria-checked="true">Best available</button>
+            <button class="seg__btn" role="radio" aria-checked="false">High · 320 kbps</button>
+            <button class="seg__btn" role="radio" aria-checked="false">Small · 128 kbps</button>
+          </div>
+        </div>
+
+        <div class="card ob-toggle phone-only">
+          <div class="srow">
+            <div class="srow__main"><div class="srow__title">Download over mobile data</div><div class="srow__sub">Off: downloads wait for Wi-Fi. Streaming still works on mobile data.</div></div>
+            <label class="toggle"><input type="checkbox" aria-label="Download over mobile data"><span class="toggle__track"></span></label>
+          </div>
+        </div>
+
+        <!-- Device scan from step 2 keeps running -->
+        <div class="card card--tint scan-strip">
+          <span class="spinner" aria-hidden="true"></span>
+          <div class="progress-line">
+            <div class="progress-line__meta"><span><strong>Scanning this device</strong></span><span><strong>31%</strong> · ~28 s left</span></div>
+            <div class="progress" style="--p:31%"><i></i></div>
+            <div class="progress-line__meta"><span>412 of 1,308 files · 398 songs · 12 voice</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ob-foot">
+      <div class="ob-foot__inner">
+        <div class="ob-foot__hint">Quality and data use can be changed in Settings</div>
+        <div class="ob-foot__actions">
+          <button class="btn btn--ghost"><svg class="icon"><use href="#i-chevron-left"/></svg>Back</button>
+          <button class="btn btn--primary btn--lg">Next<svg class="icon"><use href="#i-arrow-right"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="frame-sep"><span class="eyebrow">Step 4 of 4 · Optional — import songs &amp; playlists (link pasted, playlists found)</span></div>
+
+<!-- =====================================================================
+     FRAME 4 · Step 4 of 4 — Bring your music (optional import)
+     Shown once here; afterwards ONLY in Settings → Import from other apps.
+     ===================================================================== -->
+<div class="frame" id="step-4">
+<div class="app app--setup">
+  <div class="main">
+    <header class="topbar ob-topbar">
+      <div class="topbar__title topbar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span><span class="desktop-only">Offline Player</span><span class="phone-only">Set up</span></div>
+      <div class="ob-steps"><div class="dots" aria-hidden="true"><i></i><i></i><i></i><i class="is-active"></i></div><span class="ob-steps__label desktop-only">Step 4 of 4</span><span class="ob-steps__label phone-only"><span class="sr-only">Step </span>4/4</span></div>
+      <button class="btn btn--ghost btn--sm ob-skip">Skip setup</button>
+    </header>
+
+    <div class="page ob-page">
+      <div class="ob">
+        <div class="ob-head">
+          <div class="eyebrow">Optional</div>
+          <h1>Bring your music</h1>
+          <p>Import songs and playlists from another app. They arrive as playlists in your Library, and every song can stream or be downloaded.</p>
+        </div>
+
+        <div class="field">
+          <span class="label" id="plat-label">1 · Where from?</span>
+          <div class="plats" role="radiogroup" aria-labelledby="plat-label">
+            <button class="card card--interactive plat is-selected" role="radio" aria-checked="true" type="button">
+              <span class="src-mark src-mark--spotify src-mark--lg"><svg class="icon icon--24"><use href="#i-spotify"/></svg></span>
+              <div><div class="plat__title">Spotify</div><div class="plat__sub">Playlist or profile link · or data export</div></div>
+              <span class="plat__check" aria-hidden="true"><svg class="icon"><use href="#i-check"/></svg></span>
+            </button>
+            <button class="card card--interactive plat" role="radio" aria-checked="false" type="button">
+              <span class="src-mark src-mark--ytm src-mark--lg"><svg class="icon icon--24"><use href="#i-ytm"/></svg></span>
+              <div><div class="plat__title">YouTube Music</div><div class="plat__sub">Playlist, album or channel link</div></div>
+              <span class="plat__check" aria-hidden="true"></span>
+            </button>
+            <button class="card card--interactive plat" role="radio" aria-checked="false" type="button">
+              <span class="src-mark src-mark--sc src-mark--lg"><svg class="icon icon--24"><use href="#i-sc"/></svg></span>
+              <div><div class="plat__title">SoundCloud</div><div class="plat__sub">Playlist (set), likes or profile link</div></div>
+              <span class="plat__check" aria-hidden="true"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label" for="ob-link">2 · Paste a Spotify playlist or profile link</label>
+          <div class="pastebox is-detected">
+            <span class="src-mark src-mark--spotify"><svg class="icon"><use href="#i-user"/></svg></span>
+            <div class="grow"><div class="strong truncate">Profile · maya.kurian · 3 public playlists</div><div class="t-13 muted truncate">open.spotify.com/user/maya.kurian</div></div>
+            <button class="btn btn--icon btn--sm" aria-label="Clear link"><svg class="icon icon--16"><use href="#i-x"/></svg></button>
+          </div>
+          <div class="help">No sign-in needed. Public playlists only — or use your <a class="link" href="#export">Spotify data export (.zip)</a> for private ones and Liked Songs.</div>
+        </div>
+
+        <div class="card card--flush">
+          <div class="card__head card__head--flush">
+            <div><div class="card__title">3 · Choose playlists</div><div class="card__sub num">2 of 3 selected · 69 songs · 4 h 21 min</div></div>
+            <button class="btn btn--ghost btn--sm desktop-only">Select all</button>
+          </div>
+          <div class="frows">
+            <label class="frow">
+              <span class="check"><input type="checkbox" checked aria-label="Import Late drives"></span>
+              <div class="art art--2"><span>LD</span></div>
+              <div class="frow__main"><div class="frow__title">Late drives</div><div class="frow__path">Updated 3 days ago</div></div>
+              <div class="frow__count"><b>42 songs</b><span>2 h 48 min</span></div>
+            </label>
+            <label class="frow">
+              <span class="check"><input type="checkbox" checked aria-label="Import Sunday reset"></span>
+              <div class="art art--3"><span>SR</span></div>
+              <div class="frow__main"><div class="frow__title">Sunday reset</div><div class="frow__path">Updated last month</div></div>
+              <div class="frow__count"><b>27 songs</b><span>1 h 33 min</span></div>
+            </label>
+            <label class="frow">
+              <span class="check"><input type="checkbox" aria-label="Import Gym 2026"></span>
+              <div class="art art--1"><span>G</span></div>
+              <div class="frow__main"><div class="frow__title">Gym 2026</div><div class="frow__path">Updated in March</div></div>
+              <div class="frow__count"><b>58 songs</b><span>3 h 12 min</span></div>
+            </label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ob-foot">
+      <div class="ob-foot__inner">
+        <div class="ob-foot__hint">Optional · later only from Settings → Import from other apps</div>
+        <div class="ob-foot__actions">
+          <button class="btn btn--ghost">Skip &amp; finish</button>
+          <button class="btn btn--primary btn--lg"><svg class="icon"><use href="#i-search"/></svg>Match 69 songs</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="frame-sep"><span class="eyebrow">Step 4 · In progress — matching songs on YouTube Music</span></div>
+
+<!-- =====================================================================
+     FRAME 4b · Step 4 — Import in progress
+     ===================================================================== -->
+<div class="frame" id="step-4-progress">
+<div class="app app--setup">
+  <div class="main">
+    <header class="topbar ob-topbar">
+      <div class="topbar__title topbar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span><span class="desktop-only">Offline Player</span><span class="phone-only">Set up</span></div>
+      <div class="ob-steps"><div class="dots" aria-hidden="true"><i></i><i></i><i></i><i class="is-active"></i></div><span class="ob-steps__label desktop-only">Step 4 of 4</span><span class="ob-steps__label phone-only"><span class="sr-only">Step </span>4/4</span></div>
+      <button class="btn btn--ghost btn--sm ob-skip">Cancel import</button>
+    </header>
+
+    <div class="page ob-page">
+      <div class="ob">
+        <div class="ob-head">
+          <div class="eyebrow">Importing from Spotify</div>
+          <h1>Finding your songs</h1>
+          <p>Each song is matched on YouTube Music. Nothing downloads yet — you choose that after.</p>
+        </div>
+
+        <div class="card card--tint progress-line" aria-live="polite">
+          <div class="progress-line__meta"><span><strong>Matching 2 playlists</strong></span><span><strong>42 of 69</strong> · 61%</span></div>
+          <div class="progress progress--thick" style="--p:61%"><i></i></div>
+          <div class="progress-line__meta"><span>Late drives done · Sunday reset 0 of 27</span><span>~18 s left</span></div>
+        </div>
+
+        <div class="mstats">
+          <div class="mstat mstat--ok"><div class="stat__num">38</div><div class="stat__label">Matched</div></div>
+          <div class="mstat mstat--warn"><div class="stat__num">3</div><div class="stat__label">Need review</div></div>
+          <div class="mstat mstat--danger"><div class="stat__num">1</div><div class="stat__label">Not found</div></div>
+        </div>
+
+        <div class="card card--flush">
+          <div class="card__head card__head--flush"><div><div class="card__title">Late drives</div><div class="card__sub num">42 songs · 38 matched · 3 need review · 1 not found</div></div></div>
+          <div class="mrows">
+            <div class="mrow">
+              <div class="art art--5"><span>NC</span></div>
+              <div class="mrow__main"><div class="mrow__title">Nightcall</div><div class="mrow__sub">Kavinsky · 4:18</div></div>
+              <div class="mrow__end"><span class="badge badge--ok"><svg class="icon"><use href="#i-check"/></svg><span class="badge__label">Matched</span></span></div>
+            </div>
+            <div class="mrow">
+              <div class="art art--4"><span>RD</span></div>
+              <div class="mrow__main"><div class="mrow__title">Midnight City</div><div class="mrow__sub">M83 · 4:03 · 2 close versions found</div></div>
+              <div class="mrow__end"><span class="badge badge--warn"><svg class="icon"><use href="#i-help"/></svg><span class="badge__label">Review</span></span><button class="btn btn--secondary btn--sm">Pick</button></div>
+            </div>
+            <div class="mrow">
+              <div class="art art--empty"><svg class="icon icon--16"><use href="#i-music"/></svg></div>
+              <div class="mrow__main"><div class="mrow__title">Drive (demo, unreleased)</div><div class="mrow__sub">Lunar Lake · not on YouTube Music</div></div>
+              <div class="mrow__end"><span class="badge badge--danger"><svg class="icon"><use href="#i-x"/></svg><span class="badge__label">Not found</span></span></div>
+            </div>
+            <div class="mrow is-pending">
+              <div class="art art--empty"><span class="spinner" aria-hidden="true"></span></div>
+              <div class="mrow__main"><div class="mrow__title">Resonance</div><div class="mrow__sub">HOME · searching…</div></div>
+              <div class="mrow__end"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ob-foot">
+      <div class="ob-foot__inner">
+        <div class="ob-foot__hint num">Matching 42 of 69 · keeps going in the background · playlists appear in Library as they finish</div>
+        <div class="ob-foot__actions">
+          <button class="btn btn--primary btn--lg"><span class="desktop-only">Finish — keep matching in background</span><span class="phone-only">Finish setup</span><svg class="icon"><use href="#i-arrow-right"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="frame-sep"><span class="eyebrow">Step 4 · Done — playlists imported, setup complete</span></div>
+
+<!-- =====================================================================
+     FRAME 4c · Step 4 — Import done / setup complete
+     ===================================================================== -->
+<div class="frame" id="step-4-done">
+<div class="app app--setup">
+  <div class="main">
+    <header class="topbar ob-topbar">
+      <div class="topbar__title topbar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span><span class="desktop-only">Offline Player</span><span class="phone-only">All set</span></div>
+      <div class="ob-steps"><div class="dots" aria-hidden="true"><i></i><i></i><i></i><i class="is-active"></i></div><span class="ob-steps__label desktop-only">Done</span><span class="ob-steps__label phone-only">Done</span></div>
+      <span></span>
+    </header>
+
+    <div class="page ob-page">
+      <div class="ob">
+        <div class="done-head">
+          <span class="done-mark"><svg class="icon"><use href="#i-check-circle"/></svg></span>
+          <h1>You’re all set</h1>
+          <p>2 playlists are in your Library. Play them now — they stream — or download them to listen offline.</p>
+        </div>
+
+        <div class="mstats">
+          <div class="mstat mstat--ok"><div class="stat__num">68</div><div class="stat__label">Songs imported</div></div>
+          <div class="mstat mstat--warn"><div class="stat__num">3</div><div class="stat__label">Of those, to review</div></div>
+          <div class="mstat mstat--danger"><div class="stat__num">1</div><div class="stat__label">Not found</div></div>
+        </div>
+
+        <div class="card card--flush">
+          <div class="card__head card__head--flush">
+            <div><div class="card__title">New playlists</div><div class="card__sub num">68 songs · 4 h 17 min · ≈ 535 MB to download</div></div>
+            <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-download"/></svg>Download both</button>
+          </div>
+          <div class="frows">
+            <div class="frow frow--plain frow--pl">
+              <div class="mosaic" aria-hidden="true"><div class="art art--2"></div><div class="art art--5"></div><div class="art art--4"></div><div class="art art--6"></div></div>
+              <div class="frow__main"><div class="frow__title">Late drives</div><div class="frow__path">41 songs · 3 to review · 1 missing</div></div>
+              <div class="frow__count"><b>2 h 44 min</b><span>Streams</span></div>
+            </div>
+            <div class="frow frow--plain frow--pl">
+              <div class="mosaic" aria-hidden="true"><div class="art art--3"></div><div class="art art--1"></div><div class="art art--6"></div><div class="art art--2"></div></div>
+              <div class="frow__main"><div class="frow__title">Sunday reset</div><div class="frow__path">27 songs · all matched</div></div>
+              <div class="frow__count"><b>1 h 33 min</b><span>Streams</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="perm-row perm-row--wrap">
+          <svg class="icon icon--16"><use href="#i-check-circle"/></svg>
+          <span class="perm-row__text num">This device: 1,290 songs and 18 voice recordings added</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="ob-foot">
+      <div class="ob-foot__inner">
+        <div class="ob-foot__hint">Import more any time from Settings → Import from other apps</div>
+        <div class="ob-foot__actions">
+          <button class="btn btn--primary btn--lg">Start listening<svg class="icon"><use href="#i-arrow-right"/></svg></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- =====================================================================
+     STATES — permission, loading, empty, error, offline and interaction variants
+     ===================================================================== -->
+<section class="states" id="states">
+  <div class="states__head">
+    <h2>Onboarding states</h2>
+    <p>Variants of the step content above. Each replaces the matching block inside the same setup shell; the top bar, step indicator and footer stay as shown in the frames.</p>
+  </div>
+  <div class="states__grid">
+
+    <div class="states__group eyebrow">Step 2 · Device music</div>
+
+    <div class="state">
+      <div class="eyebrow">Storage permission not granted yet (phone)</div>
+      <div class="state__box">
+        <div class="card">
+          <div class="perm">
+            <span class="src-mark src-mark--local src-mark--lg"><svg class="icon icon--24"><use href="#i-lock"/></svg></span>
+            <div class="perm__body"><div class="perm__title">Allow storage access to scan this phone</div><div class="perm__sub">Android asks for “All files access” so the app can see folders outside its own. Scanning stays on this device; nothing is uploaded.</div></div>
+          </div>
+          <div class="cluster perm__actions"><button class="btn btn--primary"><svg class="icon"><use href="#i-lock"/></svg>Allow access</button><button class="btn btn--ghost">Use app folder only</button></div>
+        </div>
+        <div class="card card--flush">
+          <div class="card__head card__head--flush"><div><div class="card__title">Folders</div><div class="card__sub">Available after access is granted</div></div></div>
+          <div class="frows">
+            <label class="frow is-disabled"><span class="check"><input type="checkbox" disabled aria-label="Include Music"></span><span class="src-mark src-mark--local"><svg class="icon"><use href="#i-folder"/></svg></span><div class="frow__main"><div class="frow__title">Music</div><div class="frow__path">Internal storage › Music</div></div><div class="frow__count"><span>—</span></div></label>
+            <label class="frow is-disabled"><span class="check"><input type="checkbox" disabled aria-label="Include Downloads"></span><span class="src-mark src-mark--local"><svg class="icon"><use href="#i-download"/></svg></span><div class="frow__main"><div class="frow__title">Downloads</div><div class="frow__path">Internal storage › Download</div></div><div class="frow__count"><span>—</span></div></label>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state">
+      <div class="eyebrow">Error — permission denied</div>
+      <div class="state__box">
+        <div class="banner banner--danger">
+          <svg class="icon"><use href="#i-alert"/></svg>
+          <div class="banner__body"><div class="banner__title">Scan can’t start — storage permission denied</div><div class="banner__text">Allow “All files access” for Offline Player in Android settings, or scan only the app folder (<span class="num">0 files</span> right now).</div></div>
+          <div class="cluster banner__actions"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-external"/></svg>Open settings</button><button class="btn btn--ghost btn--sm">Use app folder</button></div>
+        </div>
+        <div class="ob-foot ob-foot--static"><div class="ob-foot__inner"><div class="ob-foot__hint">Allow access, or skip — you can stream without device music</div><div class="ob-foot__actions"><button class="btn btn--ghost">Not now</button><button class="btn btn--primary btn--lg is-off" disabled aria-disabled="true"><svg class="icon"><use href="#i-scan"/></svg>Scan</button></div></div></div>
+      </div>
+    </div>
+
+    <div class="state">
+      <div class="eyebrow">Loading — counting files in the chosen folders</div>
+      <div class="state__box">
+        <div class="progress-line">
+          <div class="progress-line__meta"><span><strong>Counting files</strong> in 3 folders…</span><span>Music · 8 s</span></div>
+          <div class="progress progress--indeterminate"><i></i></div>
+          <div class="progress-line__meta"><span>Reading folder contents only — nothing is added yet</span></div>
+        </div>
+        <div class="card card--flush ob-skel">
+          <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title"></i><i class="skel skel--text w-40"></i></div><i class="skel skel--text w-100"></i></div>
+          <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title"></i><i class="skel skel--text"></i></div><i class="skel skel--text w-100"></i></div>
+          <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title"></i><i class="skel skel--text w-40"></i></div><i class="skel skel--text w-100"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state">
+      <div class="eyebrow">Empty — no audio in the chosen folders</div>
+      <div class="state__box">
+        <div class="card card--flush">
+          <div class="empty empty--compact">
+            <div class="empty__icon"><svg class="icon"><use href="#i-folder"/></svg></div>
+            <div class="empty__title">No audio in these folders</div>
+            <div class="empty__text">Nothing playable in Music or Downloads (checked 2 folders · 0 of 143 files are audio). Pick another folder, or skip — you can search and stream YouTube Music next.</div>
+            <div class="empty__actions"><button class="btn btn--primary"><svg class="icon"><use href="#i-folder"/></svg>Choose another folder</button><button class="btn btn--secondary">Skip this step</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="states__group eyebrow">Step 3 · Search, stream or download</div>
+
+    <div class="state state--wide">
+      <div class="eyebrow">Offline — streaming needs internet, downloads still play</div>
+      <div class="state__box">
+        <div class="banner banner--warn">
+          <svg class="icon"><use href="#i-offline"/></svg>
+          <div class="banner__body"><div class="banner__title">You’re offline</div><div class="banner__text">Search and streaming come back when you reconnect. Music from this device plays now — 412 songs found so far.</div></div>
+          <button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-refresh"/></svg>Retry</button>
+        </div>
+        <div class="drow2">
+          <div class="art art--2"><span>AL</span></div>
+          <div class="drow2__main"><div class="drow2__title">Marea (we’ve lost dancing)</div><div class="drow2__sub"><span>Fred again.. · needs a connection</span></div></div>
+          <div class="drow2__acts"><button class="btn btn--icon btn--sm is-off" aria-disabled="true" aria-label="Play unavailable offline"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="states__group eyebrow">Step 4 · Import (optional)</div>
+
+    <div class="state">
+      <div class="eyebrow">Empty — platform chosen, no link yet (primary is Skip)</div>
+      <div class="state__box">
+        <div class="plats" role="radiogroup" aria-label="Platform">
+          <button class="card card--interactive plat is-selected" role="radio" aria-checked="true" type="button"><span class="src-mark src-mark--ytm src-mark--lg"><svg class="icon icon--24"><use href="#i-ytm"/></svg></span><div><div class="plat__title">YouTube Music</div><div class="plat__sub">Playlist, album or channel link</div></div><span class="plat__check" aria-hidden="true"><svg class="icon"><use href="#i-check"/></svg></span></button>
+        </div>
+        <div class="field">
+          <label class="label" for="ob-link-empty">Paste a YouTube Music playlist or channel link</label>
+          <div class="pastebox">
+            <svg class="icon pastebox__icon"><use href="#i-link"/></svg>
+            <input class="input" id="ob-link-empty" placeholder="music.youtube.com/playlist?list=…">
+          </div>
+          <div class="help">In YouTube Music: open the playlist → Share → Copy link. Your Liked music works too if it’s public.</div>
+        </div>
+        <div class="ob-foot ob-foot--static"><div class="ob-foot__inner"><div class="ob-foot__hint">Paste a link to continue</div><div class="ob-foot__actions"><button class="btn btn--ghost"><svg class="icon"><use href="#i-chevron-left"/></svg>Back</button><button class="btn btn--primary btn--lg">Skip &amp; finish</button></div></div></div>
+      </div>
+    </div>
+
+    <div class="state" id="export">
+      <div class="eyebrow">Spotify — sign-in-free data export</div>
+      <div class="state__box">
+        <div class="dropzone">
+          <span class="src-mark src-mark--spotify src-mark--lg"><svg class="icon icon--24"><use href="#i-file"/></svg></span>
+          <div class="dropzone__body"><div class="dropzone__title">my_spotify_data.zip</div><div class="dropzone__sub num">Found 14 playlists + Liked Songs (1,126 songs)</div></div>
+          <button class="btn btn--secondary btn--sm">Choose file</button>
+        </div>
+        <div class="help">Request it at Spotify → Account → Privacy settings → “Download your data”. It arrives by email within a few days; nothing is sent to us.</div>
+        <div class="ob-foot ob-foot--static"><div class="ob-foot__inner"><div class="ob-foot__hint">Next: pick which playlists to import</div><div class="ob-foot__actions"><button class="btn btn--ghost">Skip &amp; finish</button><button class="btn btn--primary btn--lg">Next<svg class="icon"><use href="#i-arrow-right"/></svg></button></div></div></div>
+      </div>
+    </div>
+
+    <div class="state">
+      <div class="eyebrow">Loading — reading the link</div>
+      <div class="state__box">
+        <div class="pastebox is-detected">
+          <span class="src-mark src-mark--sc"><svg class="icon"><use href="#i-sc"/></svg></span>
+          <div class="grow"><div class="strong truncate">soundcloud.com/odesza/sets/the-last-goodbye</div><div class="t-13 muted">Reading playlist…</div></div>
+          <span class="spinner" aria-hidden="true"></span>
+        </div>
+        <div class="card card--flush ob-skel">
+          <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title"></i><i class="skel skel--text w-40"></i></div><i class="skel skel--text w-100"></i></div>
+          <div class="skel-row"><i class="skel skel--art"></i><div class="stack"><i class="skel skel--title"></i><i class="skel skel--text"></i></div><i class="skel skel--text w-100"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state">
+      <div class="eyebrow">Error — link not usable</div>
+      <div class="state__box">
+        <div class="field">
+          <span class="label">Paste a Spotify playlist or profile link</span>
+          <div class="pastebox is-error">
+            <svg class="icon pastebox__icon"><use href="#i-alert"/></svg>
+            <input class="input" value="open.spotify.com/playlist/6vDGVr652ztNWKZuHvsFvx" aria-label="Link" aria-invalid="true">
+          </div>
+          <div class="help help--error">This playlist is private. Make it public in Spotify, or use your data export instead.</div>
+        </div>
+        <div class="cluster"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-refresh"/></svg>Try again</button><a class="btn btn--ghost btn--sm" href="#export"><svg class="icon icon--16"><use href="#i-file"/></svg>Use data export</a></div>
+      </div>
+    </div>
+
+    <div class="state">
+      <div class="eyebrow">Error — connection lost while matching</div>
+      <div class="state__box">
+        <div class="banner banner--danger">
+          <svg class="icon"><use href="#i-alert"/></svg>
+          <div class="banner__body"><div class="banner__title">Matching paused at 42 of 69</div><div class="banner__text">The connection dropped. 38 matched songs are kept; the rest resume when you’re back online.</div></div>
+          <div class="cluster banner__actions"><button class="btn btn--secondary btn--sm"><svg class="icon icon--16"><use href="#i-refresh"/></svg>Resume</button><button class="btn btn--ghost btn--sm">Finish setup anyway</button></div>
+        </div>
+        <div class="progress-line">
+          <div class="progress-line__meta"><span><strong>Paused</strong> · Late drives done</span><span>42 of 69 · 61%</span></div>
+          <div class="progress progress--paused" style="--p:61%"><i></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state">
+      <div class="eyebrow">Offline — import needs a connection</div>
+      <div class="state__box">
+        <div class="banner banner--warn">
+          <svg class="icon"><use href="#i-offline"/></svg>
+          <div class="banner__body"><div class="banner__title">Import needs internet</div><div class="banner__text">Songs are matched on YouTube Music. Skip for now and import later from Settings → Import from other apps.</div></div>
+        </div>
+        <div class="plats">
+          <div class="card plat is-disabled"><span class="src-mark src-mark--spotify src-mark--lg"><svg class="icon icon--24"><use href="#i-spotify"/></svg></span><div><div class="plat__title">Spotify</div><div class="plat__sub">Needs a connection</div></div><span class="plat__check" aria-hidden="true"></span></div>
+          <div class="card plat is-disabled"><span class="src-mark src-mark--ytm src-mark--lg"><svg class="icon icon--24"><use href="#i-ytm"/></svg></span><div><div class="plat__title">YouTube Music</div><div class="plat__sub">Needs a connection</div></div><span class="plat__check" aria-hidden="true"></span></div>
+          <div class="card plat is-disabled"><span class="src-mark src-mark--sc src-mark--lg"><svg class="icon icon--24"><use href="#i-sc"/></svg></span><div><div class="plat__title">SoundCloud</div><div class="plat__sub">Needs a connection</div></div><span class="plat__check" aria-hidden="true"></span></div>
+        </div>
+        <div class="ob-foot ob-foot--static"><div class="ob-foot__inner"><div class="ob-foot__hint">Nothing is lost by skipping</div><div class="ob-foot__actions"><button class="btn btn--primary btn--lg">Skip &amp; finish</button></div></div></div>
+      </div>
+    </div>
+
+    <div class="state">
+      <div class="eyebrow">Done — nothing could be matched</div>
+      <div class="state__box">
+        <div class="card card--flush">
+          <div class="empty empty--compact empty--error">
+            <div class="empty__icon"><svg class="icon"><use href="#i-search"/></svg></div>
+            <div class="empty__title">No matches for “Field tapes”</div>
+            <div class="empty__text">0 of 12 songs are on YouTube Music (private uploads). No playlist was created. Try another playlist, or finish and search YouTube Music yourself.</div>
+            <div class="empty__actions"><button class="btn btn--primary">Finish setup</button><button class="btn btn--secondary"><svg class="icon"><use href="#i-link"/></svg>Try another link</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="state state--wide">
+      <div class="eyebrow">Interaction — hover, keyboard focus and pressed</div>
+      <div class="state__box">
+        <div class="interact">
+          <div>
+            <div class="interact__cap">Folder / playlist row · hover</div>
+            <div class="card card--flush"><div class="frows">
+              <label class="frow is-hover"><span class="check"><input type="checkbox" checked aria-label="Import Late drives"></span><div class="art art--2"><span>LD</span></div><div class="frow__main"><div class="frow__title">Late drives</div><div class="frow__path">Updated 3 days ago</div></div><div class="frow__count"><b>42 songs</b><span>2 h 48 min</span></div></label>
+            </div></div>
+          </div>
+          <div>
+            <div class="interact__cap">Platform card · keyboard focus (2px focus ring)</div>
+            <div class="plats" style="grid-template-columns:minmax(0,1fr)">
+              <button class="card card--interactive plat is-focus" role="radio" aria-checked="false" type="button"><span class="src-mark src-mark--sc src-mark--lg"><svg class="icon icon--24"><use href="#i-sc"/></svg></span><div><div class="plat__title">SoundCloud</div><div class="plat__sub">Playlist (set), likes or profile</div></div><span class="plat__check" aria-hidden="true"></span></button>
+            </div>
+          </div>
+          <div>
+            <div class="interact__cap">Platform card · hover / pressed</div>
+            <div class="plats" style="grid-template-columns:minmax(0,1fr)">
+              <button class="card card--interactive plat is-hover is-active" role="radio" aria-checked="false" type="button"><span class="src-mark src-mark--ytm src-mark--lg"><svg class="icon icon--24"><use href="#i-ytm"/></svg></span><div><div class="plat__title">YouTube Music</div><div class="plat__sub">Playlist, album or channel</div></div><span class="plat__check" aria-hidden="true"></span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+</body>
+</html>

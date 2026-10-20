@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Player — Playlist</title>
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<script>/* ?state=<id> shows only the review state tagged data-state="<id>" */(function(){var s=new URLSearchParams(location.search).get('state');if(!s)return;addEventListener('DOMContentLoaded',function(){var t=document.querySelector('[data-state="'+s+'"]');if(!t)return;for(var n=t;n&&n!==document.body;n=n.parentElement){var p=n.parentElement;if(!p)break;for(var i=0;i<p.children.length;i++){var c=p.children[i];if(c!==n&&!/^(SCRIPT|STYLE)$/.test(c.tagName)&&c.id!=='sprite')c.style.display='none';}}t.style.margin='0';window.scrollTo(0,0);});})()</script>
+<link rel="stylesheet" href="../system.css">
+<style>
+  /* Song rows: liked = red filled heart (beats the gray .row .btn--icon.btn--sm rule); ⋯ menu always visible */
+  .row .btn--icon.like.is-liked { color: var(--accent-text); }
+  .row .row__menu { opacity: 1; }
+  /* Breadcrumb: shared sub-page pattern (back arrow + breadcrumb) */
+  .crumb { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-13); color: var(--text-2); margin-bottom: var(--sp-1); }
+  .crumb a { color: var(--text-2); }
+  .crumb a:hover { color: var(--text); }
+  .crumb .icon { width: 14px; height: 14px; color: var(--text-3); }
+  /* Playlist detail + Create playlist (v2.1). Layout only: every colour, size and radius is a system.css token. */
+
+  /* Hero: mosaic | title, meta, actions */
+  .pl-hero { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--sp-6); align-items: end; }
+  .mosaic { width: 200px; aspect-ratio: 1; display: grid; grid-template-columns: 1fr 1fr; border-radius: var(--r-card); overflow: hidden; box-shadow: var(--shadow-2); }
+  .mosaic .art { width: 100%; height: 100%; border-radius: 0; font-size: var(--fs-20); }
+  .mosaic--single { display: block; }
+  .mosaic--single .art { font-size: var(--fs-36); }
+  .pl-info { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+  .pl-info h1 { font-size: var(--fs-36); }
+  .pl-desc { color: var(--text-2); max-width: var(--measure); }
+  .pl-meta { font-size: var(--fs-13); }
+  .pl-meta strong { color: var(--text); font-weight: var(--fw-semibold); }
+
+  /* Action row: one dominant Play, everything else quieter */
+  .pl-actions { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+  .pl-play { width: 56px; height: 56px; box-shadow: var(--shadow-2); }
+  .pl-play .icon { width: 24px; height: 24px; fill: currentColor; stroke: none; }
+  .pl-actions .pl-shuffle { margin-right: var(--sp-2); }
+  .pl-dl { margin-left: auto; width: 296px; flex: none; }
+  .pl-dl .progress-line__meta { font-size: var(--fs-13); }
+  .pl-dl .progress-line__meta + .progress-line__meta { font-size: var(--fs-12); }
+
+  /* List toolbar */
+  .pl-tools { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+  .pl-tools__right { display: flex; align-items: center; gap: var(--sp-3); }
+  .pl-tools .select { height: 32px; width: auto; font-size: var(--fs-13); }
+  .pl-list { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .pl-foot { padding: var(--sp-3) var(--sp-2) 0; font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; border-top: 1px solid var(--border); }
+
+  /* Download state indicators (sub-line, before the artist) */
+  .row__sub .row__artist { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .dl-prog { display: inline-flex; align-items: center; gap: var(--sp-1); flex: none; color: var(--accent-text); font-size: var(--fs-12); font-weight: var(--fw-semibold); }
+  .ring--xs { width: 16px; height: 16px; }
+  .ring--xs circle { stroke-width: 5; }
+  .row.is-failed .row__title { color: var(--text-2); }
+
+  /* Add songs (inline search) */
+  .add-card { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .add-card .search--lg { max-width: var(--content-narrow); }
+  .row--result { grid-template-columns: var(--art-row) minmax(0, 1fr) 56px 136px; }
+  .row--result .row__actions { justify-content: flex-end; }
+  .row--result .btn--sm { min-width: 88px; }
+  .row--head .row__dur .icon { margin-left: auto; }
+  .dl-stream { display: inline-flex; align-items: center; gap: var(--sp-1); flex: none; }
+  .btn.is-added { color: var(--ok); }
+  .help--block { display: block; }
+  .empty__search { width: 100%; max-width: var(--content-narrow); margin-top: var(--sp-2); }
+
+  /* Edit mode */
+  .edit-head { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+  .edit-fields { display: flex; flex-direction: column; gap: var(--sp-4); max-width: var(--content-narrow); }
+  .erow { display: grid; grid-template-columns: var(--hit) var(--art-row) minmax(0, 1fr) 56px var(--hit); gap: var(--sp-3); align-items: center; min-height: var(--row-h); padding: 0 var(--sp-2); border-radius: var(--r-ctl); background: var(--surface); }
+  .erow:hover, .erow.is-hover { background: var(--surface-2); }
+  .erow__grip { width: var(--hit); height: var(--hit); display: grid; place-items: center; color: var(--text-3); cursor: grab; border-radius: var(--r-ctl); }
+  .erow__grip:hover { color: var(--text); background: var(--surface-3); }
+  .erow.is-dragging { box-shadow: var(--shadow-3); border: 1px solid var(--border-strong); }
+  .erow.is-dragging .erow__grip { color: var(--text); cursor: grabbing; }
+  .erow .row__dur { font-size: var(--fs-13); }
+  .erow__remove { color: var(--text-3); }
+  .erow__remove:hover { color: var(--danger); background: var(--danger-soft); }
+  .drop-line { height: 2px; margin: 0 var(--sp-2); border-radius: var(--r-pill); background: var(--accent); }
+  .edit-bar { display: flex; align-items: center; gap: var(--sp-2); padding-top: var(--sp-4); border-top: 1px solid var(--border); }
+  .edit-bar .grow { flex: 1; }
+
+  /* Dialog mock (not fixed: rendered in place for review) */
+  .mock-scrim { position: relative; background: var(--scrim); border-radius: var(--r-card); padding: var(--sp-10) var(--sp-6); display: flex; justify-content: center; align-items: center; }
+  .mock-scrim--sheet { padding: var(--sp-16) 0 0; align-items: flex-end; overflow: hidden; }
+  .mock-scrim .sheet { border-radius: var(--r-card) var(--r-card) 0 0; }
+  .art-pick { display: flex; align-items: center; gap: var(--sp-3); }
+  .art-pick .art { width: 64px; height: 64px; }
+
+  /* Skeleton sizes (tokens only) */
+  .skel--mosaic { width: 200px; height: 200px; border-radius: var(--r-card); }
+  .skel--h1 { height: 36px; width: 280px; }
+  .skel--play { width: 56px; height: 56px; border-radius: 50%; }
+  .skel--chip { height: 24px; width: 48px; border-radius: var(--r-pill); }
+  .skel--chip-lg { width: 96px; }
+  .skel-row--pl { grid-template-columns: 32px var(--art-row) minmax(0, 1fr) 56px; }
+  .skel-row--pl .skel--num { height: 12px; width: 16px; justify-self: end; }
+
+  /* State variants (review only) */
+  .variants { width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--sp-10) var(--gutter) var(--sp-16); display: flex; flex-direction: column; gap: var(--sp-10); }
+  .variants__intro { border-top: 1px solid var(--border); padding-top: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-1); }
+  .variants__intro p { color: var(--text-2); max-width: var(--content-narrow); }
+  .variant { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .variant__label { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+  .variant__label p { color: var(--text-2); font-size: var(--fs-13); }
+  .variant__box { background: var(--page); border: 1px solid var(--border); border-radius: var(--r-card); padding: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-5); }
+  .variant__split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--sp-6); }
+
+  /* Desktop narrow (1024–1180): download progress drops under the actions */
+  @media (max-width: 1180px) and (min-width: 821px) {
+    .pl-actions { flex-wrap: wrap; }
+    .pl-actions .lbl-btn--icon { width: 40px; padding: 0; }
+    .pl-actions .lbl-btn--icon .lbl { display: none; }
+    .pl-dl { margin-left: 0; flex: 1 1 100%; width: auto; max-width: var(--content-narrow); margin-top: var(--sp-2); }
+    .row { grid-template-columns: 32px var(--art-row) minmax(0, 1.4fr) minmax(0, .8fr) 56px var(--hit) var(--hit); }
+  }
+
+  /* Phone (<= 820) */
+  @media (max-width: 820px) {
+    .pl-hero { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+    .pl-hero .mosaic { width: 184px; justify-self: center; }
+    .pl-info h1 { font-size: var(--fs-28); }
+    .pl-desc { font-size: var(--fs-13); }
+    .pl-actions { flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-1); }
+    .pl-actions .pl-shuffle { order: 9; margin-left: auto; margin-right: var(--sp-1); }
+    .pl-actions .pl-play { order: 10; }
+    .pl-actions .lbl-btn { width: 44px; padding: 0; border-color: transparent; background: transparent; color: var(--text-2); }
+    .pl-actions .lbl-btn .lbl { display: none; }
+    .pl-dl { order: 11; flex: 1 1 100%; width: auto; margin: var(--sp-2) 0 0; }
+    .pl-tools .pl-tools__count { display: none; }
+    .pl-tools { justify-content: flex-end; }
+    .pl-tools .select { height: 44px; }
+    .pl-foot { padding-left: var(--sp-1); }
+    .row .row__menu { opacity: 1; }
+    .row .row__sub > span.badge, .row .row__sub > span.dl-prog, .row .row__sub > span.dl-stream { flex: none; }
+    .row .row__sub > span.row__artist { flex: 1 1 auto; }
+    .row--result { grid-template-columns: 44px minmax(0, 1fr) auto; }
+
+    .add-card .search--lg .search__input { font-size: var(--fs-14); }
+    .row--result .row__actions .btn--sm { min-width: 0; }
+
+    .edit-head { grid-template-columns: minmax(0, 1fr); }
+    .edit-head .mosaic { width: 144px; }
+    .erow { grid-template-columns: 44px 44px minmax(0, 1fr) 44px; min-height: 64px; padding: 0 var(--sp-1); gap: var(--sp-2); }
+    .erow .art { width: 44px; height: 44px; }
+    .erow .row__dur { display: none; }
+    .erow__grip { width: 44px; height: 44px; }
+    .edit-bar { flex-wrap: wrap; }
+    .edit-bar .btn--danger { order: 3; flex: 1 1 100%; }
+    .edit-bar .grow { display: none; }
+    .edit-bar .btn--ghost, .edit-bar .btn--primary { flex: 1 1 0; }
+
+    .skel--mosaic { width: 184px; height: 184px; justify-self: center; }
+    .skel--h1 { width: 200px; height: 28px; }
+    .skel-row--pl { grid-template-columns: 44px minmax(0, 1fr) 40px; }
+    .skel-row--pl .skel--num { display: none; }
+    .skel-row--pl .skel--art { width: 44px; height: 44px; }
+
+    .variants { padding: var(--sp-8) var(--gutter) var(--sp-12); gap: var(--sp-8); }
+    .variant__box { padding: var(--sp-4); gap: var(--sp-4); }
+    .variant__split { grid-template-columns: minmax(0, 1fr); }
+    .mock-scrim { padding: var(--sp-6) var(--sp-4); }
+    .mock-scrim--sheet { padding: var(--sp-16) 0 0; }
+  }
+  /* v2.1 additions */
+  .pl-meta .sg { width: 16px; height: 16px; }
+  .row__sub .sg { flex: none; }
+  .pl-origin { font-size: var(--fs-13); color: var(--text-2); }
+  .pl-dl--idle { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .variant__trio .menu { width: 100%; }
+  .variant__trio .row--result { grid-template-columns: var(--art-row) minmax(0, 1fr) auto; }
+  .variant__trio .row--result .row__dur { display: none; }
+  .variant__trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-6); }
+  .state-cap { font-size: var(--fs-12); font-weight: var(--fw-semibold); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--text-3); }
+  .mock-scrim--menu { padding: var(--sp-16) 0 0; align-items: flex-end; overflow: hidden; }
+  .menu__item--lead { font-weight: var(--fw-semibold); }
+  .sheet-head { display: flex; align-items: center; gap: var(--sp-3); padding-bottom: var(--sp-2); border-bottom: 1px solid var(--border); }
+  .sheet-head .mosaic { width: 48px; border-radius: var(--r-art); box-shadow: none; }
+  .sheet-head .mosaic .art { font-size: var(--fs-12); }
+  @media (max-width: 1180px) and (min-width: 821px) { .variant__trio { grid-template-columns: minmax(0, 1fr); } }
+  @media (max-width: 820px) { .variant__trio { grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); } }
+</style>
+</head>
+<body>
+
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4h3v16H4zM10 4h3v16h-3zM15.5 5.2l2.9-.8 4.1 14.7-2.9.8z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 6l-10 6 10 6zM5 6v12"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 6l10 6-10 6zM19 6v12"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-chevron-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M3 6h12M3 12h12M3 18h8M18 6v10"/><circle cx="16" cy="16.5" r="2.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M12 18v-6M9 15l3 3 3-3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></symbol>
+  <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2M7 12h10"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="M22.6 16.6A5 5 0 0 0 18 9h-1.3A8 8 0 0 0 5 6.3M3 3l18 18M7 17h11M3.2 12.8A5 5 0 0 0 7 19"/></symbol>
+  <symbol id="i-playlist" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h7M19 9v9M16 13h6"/></symbol>
+  <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  <symbol id="i-ytm" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="5.5"/><path d="M10.5 9.5v5l4.2-2.5z"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><path d="M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01" stroke-width="3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 9.5a4 4 0 0 1-1 8.5z"/></symbol>
+  <symbol id="i-dl-done" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="M12 7v8M8.5 11.5 12 15l3.5-3.5" style="stroke:var(--surface)"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4"/></symbol>
+
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M2 12h2M6 8v8M10 5v14M14 8v8M18 10v4M22 12h0"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+</svg>
+
+<!-- ======================================================================
+     LIVE SCREEN — "Late drives" playlist; Download all in progress; Heat Waves playing from it
+     ====================================================================== -->
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="sidebar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span>Offline Player</div>
+    <nav class="sidebar__section" aria-label="Primary">
+      <a class="nav-item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+      <a class="nav-item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+      <a class="nav-item" href="library.html"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+      <a class="nav-item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="nav-item__count">3</span></a>
+      <a class="nav-item" href="voice.html"><svg class="icon"><use href="#i-mic"/></svg>Voice recordings<span class="nav-item__count">18</span></a>
+    </nav>
+    <div class="sidebar__section">
+      <div class="eyebrow sidebar__label">Playlists</div>
+      <a class="nav-item nav-item--playlist" href="library.html"><svg class="icon icon--16"><use href="#i-heart"/></svg>Liked songs</a>
+      <a class="nav-item nav-item--playlist is-active" href="playlist.html" aria-current="page"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Late drives</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Focus — no vocals</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Gym 2026</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html#create"><svg class="icon icon--16"><use href="#i-plus"/></svg>New playlist</a>
+    </div>
+    <div class="sidebar__section sidebar__foot">
+      <a class="nav-item" href="settings.html"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <a class="btn btn--icon topbar__back" href="library.html" aria-label="Back to Library"><svg class="icon"><use href="#i-chevron-left"/></svg></a>
+      <div class="topbar__title phone-only">Late drives</div>
+      <div class="search desktop-only"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" placeholder="Search YouTube Music and your library" aria-label="Search"><span class="search__kbd">Ctrl K</span></div>
+      <a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a>
+      <button class="btn btn--icon phone-only topbar__trail" aria-label="More options: Edit, Add songs, Download, Delete playlist" aria-haspopup="menu"><svg class="icon"><use href="#i-more"/></svg></button>
+    </header>
+
+    <div class="page">
+
+      <!-- Hero -->
+      <section class="pl-hero" aria-labelledby="pl-title">
+        <div class="mosaic" role="img" aria-label="Playlist artwork: covers of the first four songs">
+          <div class="art art--1"><span>D</span></div><div class="art art--4"><span>SA</span></div>
+          <div class="art art--2"><span>C</span></div><div class="art art--5"><span>B</span></div>
+        </div>
+        <div class="pl-info">
+          <nav class="crumb desktop-only" aria-label="Breadcrumb"><a href="library.html">Library</a><svg class="icon" aria-hidden="true"><use href="#i-chevron-right"/></svg><span>Late drives</span></nav>
+          <div class="eyebrow">Playlist</div>
+          <h1 id="pl-title">Late drives</h1>
+          <p class="pl-desc">Windows down, city lights, nothing to skip.</p>
+          <div class="meta pl-meta">
+            <span><strong>24 songs</strong></span><span class="sep"></span><span>1 h 47 min</span><span class="sep"></span>
+            <span class="cluster"><svg class="icon sg sg--dl" aria-hidden="true"><use href="#i-check"/></svg>18 of 24 downloaded · 164 MB</span>
+          </div>
+          <div class="pl-actions">
+            <button class="btn btn--icon btn--primary pl-play" aria-label="Play Late drives"><svg class="icon"><use href="#i-play"/></svg></button>
+            <button class="btn btn--icon btn--secondary pl-shuffle" aria-label="Shuffle play"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+            <button class="btn btn--secondary lbl-btn" aria-label="Pause downloading this playlist"><svg class="icon"><use href="#i-pause"/></svg><span class="lbl">Pause download</span></button>
+            <button class="btn btn--secondary lbl-btn lbl-btn--icon" aria-label="Add songs"><svg class="icon"><use href="#i-plus"/></svg><span class="lbl">Add songs</span></button>
+            <button class="btn btn--secondary lbl-btn lbl-btn--icon" aria-label="Edit playlist"><svg class="icon"><use href="#i-edit"/></svg><span class="lbl">Edit</span></button>
+            <button class="btn btn--icon" aria-label="More options for Late drives"><svg class="icon"><use href="#i-more"/></svg></button>
+            <div class="progress-line pl-dl" role="status" aria-label="Download all progress">
+              <div class="progress-line__meta"><span>Downloading <strong>19 of 24</strong></span><strong class="num">76%</strong></div>
+              <div class="progress" style="--p:76%"><i></i></div>
+              <div class="progress-line__meta"><span>3.2 MB/s · 4 queued · 1 failed</span><span>about 1 min left</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Song list -->
+      <section class="pl-list" aria-label="Songs in Late drives">
+        <div class="banner banner--danger" role="alert">
+          <svg class="icon"><use href="#i-alert"/></svg>
+          <div class="banner__body"><div class="banner__title">Sweater Weather couldn’t download</div><div class="banner__text">YouTube Music reset the connection at 41%. It still streams when you’re online.</div></div>
+          <button class="btn btn--secondary btn--sm"><svg class="icon"><use href="#i-refresh"/></svg>Retry</button>
+        </div>
+
+        <div class="pl-tools">
+          <span class="pl-tools__count muted t-13 num">Custom order · drag in Edit to reorder</span>
+          <div class="pl-tools__right">
+            <label class="toggle t-13"><input type="checkbox"><span class="toggle__track"></span><span>Downloaded only</span></label>
+            <select class="select" aria-label="Sort songs"><option>Custom order</option><option>Title</option><option>Artist</option><option>Recently added</option></select>
+          </div>
+        </div>
+
+        <div class="list">
+          <div class="row row--head"><div class="row__num">#</div><div></div><div>Title</div><div>Album</div><div class="row__dur" aria-label="Duration"><svg class="icon icon--16"><use href="#i-clock"/></svg></div><div aria-label="Liked"></div><div aria-label="More"></div></div>
+          <div class="row is-playing"><div class="row__num"><span class="eq" aria-label="Playing"><i></i><i></i><i></i></span><button class="btn btn--icon btn--sm" aria-label="Pause"><svg class="icon icon--16 icon--fill"><use href="#i-pause"/></svg></button></div><div class="art art--1"><span>D</span></div><div class="row__main"><div class="row__title">Heat Waves</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Glass Animals</span></div></div><div class="row__album">Dreamland</div><div class="row__dur">3:58</div><button class="btn btn--icon btn--sm like row__like is-liked" aria-label="Liked Heat Waves"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Heat Waves"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>2</span><button class="btn btn--icon btn--sm" aria-label="Play Motion Sickness"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--4"><span>SA</span></div><div class="row__main"><div class="row__title">Motion Sickness</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Phoebe Bridgers</span></div></div><div class="row__album">Stranger in the Alps</div><div class="row__dur">3:49</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Motion Sickness"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Motion Sickness"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>3</span><button class="btn btn--icon btn--sm" aria-label="Play The Less I Know the Better"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--2"><span>C</span></div><div class="row__main"><div class="row__title">The Less I Know the Better</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Tame Impala</span></div></div><div class="row__album">Currents</div><div class="row__dur">3:36</div><button class="btn btn--icon btn--sm like row__like is-liked" aria-label="Liked The Less I Know the Better"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for The Less I Know the Better"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>4</span><button class="btn btn--icon btn--sm" aria-label="Play Pink + White"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--5"><span>B</span></div><div class="row__main"><div class="row__title">Pink + White</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Frank Ocean</span></div></div><div class="row__album">Blonde</div><div class="row__dur">3:04</div><button class="btn btn--icon btn--sm like row__like is-liked" aria-label="Liked Pink + White"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Pink + White"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>5</span><button class="btn btn--icon btn--sm" aria-label="Play Redbone"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--6"><span>AM</span></div><div class="row__main"><div class="row__title">Redbone</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Childish Gambino</span></div></div><div class="row__album">“Awaken, My Love!”</div><div class="row__dur">5:27</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Redbone"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Redbone"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>6</span><button class="btn btn--icon btn--sm" aria-label="Play Ribs"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--3"><span>PH</span></div><div class="row__main"><div class="row__title">Ribs</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Lorde</span></div></div><div class="row__album">Pure Heroine</div><div class="row__dur">4:18</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Ribs"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Ribs"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>7</span><button class="btn btn--icon btn--sm" aria-label="Play Nights"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--5"><span>B</span></div><div class="row__main"><div class="row__title">Nights</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Frank Ocean</span></div></div><div class="row__album">Blonde</div><div class="row__dur">5:07</div><button class="btn btn--icon btn--sm like row__like is-liked" aria-label="Liked Nights"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Nights"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>8</span><button class="btn btn--icon btn--sm" aria-label="Play Kyoto"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--4"><span>P</span></div><div class="row__main"><div class="row__title">Kyoto</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Phoebe Bridgers</span></div></div><div class="row__album">Punisher</div><div class="row__dur">3:04</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Kyoto"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Kyoto"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>9</span><button class="btn btn--icon btn--sm" aria-label="Play Let It Happen"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--2"><span>C</span></div><div class="row__main"><div class="row__title">Let It Happen</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Tame Impala</span></div></div><div class="row__album">Currents</div><div class="row__dur">7:47</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Let It Happen"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Let It Happen"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>10</span><button class="btn btn--icon btn--sm" aria-label="Play Electric Feel"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--1"><span>OS</span></div><div class="row__main"><div class="row__title">Electric Feel</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">MGMT</span></div></div><div class="row__album">Oracular Spectacular</div><div class="row__dur">3:49</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Electric Feel"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Electric Feel"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>11</span><button class="btn btn--icon btn--sm" aria-label="Play Dreams Tonite"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--3"><span>A</span></div><div class="row__main"><div class="row__title">Dreams Tonite</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Alvvays</span></div></div><div class="row__album">Antisocialites</div><div class="row__dur">3:19</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Dreams Tonite"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Dreams Tonite"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>12</span><button class="btn btn--icon btn--sm" aria-label="Play Space Song"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--6"><span>DC</span></div><div class="row__main"><div class="row__title">Space Song</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Beach House</span></div></div><div class="row__album">Depression Cherry</div><div class="row__dur">5:20</div><button class="btn btn--icon btn--sm like row__like is-liked" aria-label="Liked Space Song"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Space Song"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>13</span><button class="btn btn--icon btn--sm" aria-label="Play Myth"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--5"><span>Bl</span></div><div class="row__main"><div class="row__title">Myth</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Beach House</span></div></div><div class="row__album">Bloom</div><div class="row__dur">4:18</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Myth"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Myth"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>14</span><button class="btn btn--icon btn--sm" aria-label="Play The Night We Met"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--4"><span>ST</span></div><div class="row__main"><div class="row__title">The Night We Met</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Lord Huron</span></div></div><div class="row__album">Strange Trails</div><div class="row__dur">3:28</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like The Night We Met"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for The Night We Met"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>15</span><button class="btn btn--icon btn--sm" aria-label="Play Apocalypse"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--6"><span>CS</span></div><div class="row__main"><div class="row__title">Apocalypse</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Cigarettes After Sex</span></div></div><div class="row__album">Cigarettes After Sex</div><div class="row__dur">4:50</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Apocalypse"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Apocalypse"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>16</span><button class="btn btn--icon btn--sm" aria-label="Play Nikes"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--5"><span>B</span></div><div class="row__main"><div class="row__title">Nikes</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Frank Ocean</span></div></div><div class="row__album">Blonde</div><div class="row__dur">5:14</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Nikes"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Nikes"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>17</span><button class="btn btn--icon btn--sm" aria-label="Play Somebody Else"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--2"><span>75</span></div><div class="row__main"><div class="row__title">Somebody Else</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">The 1975</span></div></div><div class="row__album">I Like It When You Sleep…</div><div class="row__dur">5:47</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Somebody Else"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Somebody Else"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>18</span><button class="btn btn--icon btn--sm" aria-label="Play Fade Into You"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--3"><span>MS</span></div><div class="row__main"><div class="row__title">Fade Into You</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Mazzy Star</span></div></div><div class="row__album">So Tonight That I Might See</div><div class="row__dur">4:55</div><button class="btn btn--icon btn--sm like row__like is-liked" aria-label="Liked Fade Into You"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Fade Into You"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>19</span><button class="btn btn--icon btn--sm" aria-label="Play Midnight City"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--1"><span>M</span></div><div class="row__main"><div class="row__title">Midnight City</div><div class="row__sub"><span class="dl-prog" aria-label="Downloading, 62%"><svg class="ring ring--xs" viewBox="0 0 36 36" aria-hidden="true"><circle class="ring__bg"/><circle class="ring__fg" pathLength="100" style="--p:62"/></svg><span class="num">62%</span></span><span class="row__artist">M83</span></div></div><div class="row__album">Hurry Up, We’re Dreaming</div><div class="row__dur">4:03</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Midnight City"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Midnight City"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row is-failed"><div class="row__num"><span>20</span><button class="btn btn--icon btn--sm" aria-label="Play Sweater Weather"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--6"><span>N</span></div><div class="row__main"><div class="row__title">Sweater Weather</div><div class="row__sub"><span class="badge badge--danger"><svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>Failed</span><span class="row__artist">The Neighbourhood</span></div></div><div class="row__album">I Love You.</div><div class="row__dur">4:00</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Sweater Weather"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Sweater Weather"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>21</span><button class="btn btn--icon btn--sm" aria-label="Play Instant Crush"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--2"><span>RA</span></div><div class="row__main"><div class="row__title">Instant Crush</div><div class="row__sub"><svg class="icon sg sg--st" role="img" aria-label="Streams until downloaded"><use href="#i-stream"/></svg><span class="badge">Queued</span><span class="row__artist">Daft Punk</span></div></div><div class="row__album">Random Access Memories</div><div class="row__dur">5:37</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Instant Crush"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Instant Crush"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>22</span><button class="btn btn--icon btn--sm" aria-label="Play Lost in Yesterday"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--4"><span>SR</span></div><div class="row__main"><div class="row__title">Lost in Yesterday</div><div class="row__sub"><svg class="icon sg sg--st" role="img" aria-label="Streams until downloaded"><use href="#i-stream"/></svg><span class="badge">Queued</span><span class="row__artist">Tame Impala</span></div></div><div class="row__album">The Slow Rush</div><div class="row__dur">4:09</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Lost in Yesterday"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Lost in Yesterday"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>23</span><button class="btn btn--icon btn--sm" aria-label="Play Garden Song"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--4"><span>P</span></div><div class="row__main"><div class="row__title">Garden Song</div><div class="row__sub"><svg class="icon sg sg--st" role="img" aria-label="Streams until downloaded"><use href="#i-stream"/></svg><span class="badge">Queued</span><span class="row__artist">Phoebe Bridgers</span></div></div><div class="row__album">Punisher</div><div class="row__dur">3:39</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Garden Song"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Garden Song"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+          <div class="row"><div class="row__num"><span>24</span><button class="btn btn--icon btn--sm" aria-label="Play After Dark"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--5"><span>T</span></div><div class="row__main"><div class="row__title">After Dark</div><div class="row__sub"><svg class="icon sg sg--st" role="img" aria-label="Streams until downloaded"><use href="#i-stream"/></svg><span class="badge">Queued</span><span class="row__artist">Mr.Kitty</span></div></div><div class="row__album">Time</div><div class="row__dur">4:17</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like After Dark"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for After Dark"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+        </div>
+        <div class="pl-foot">24 songs · 1 h 47 min · 18 downloaded, 1 downloading, 4 queued, 1 failed</div>
+      </section>
+
+      <!-- Add songs: inline search -->
+      <section class="card card--pad-lg add-card" aria-labelledby="h-add">
+        <div class="between">
+          <div><h3 class="t-16" id="h-add">Add songs</h3><div class="card__sub">Search YouTube Music and your library. Added songs download with the playlist.</div></div>
+          <span class="meta num"><span>1 added</span><span class="sep"></span><span>4 results</span></span>
+        </div>
+        <div class="search search--lg"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" value="phoebe bridgers" aria-label="Search songs to add"><button class="btn btn--icon btn--sm search__clear" aria-label="Clear"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+        <div class="list">
+            <div class="row row--result"><div class="art art--4"><span>P</span></div><div class="row__main"><div class="row__title">Kyoto</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Phoebe Bridgers · Punisher</span></div></div><div class="row__dur">3:04</div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Preview Kyoto (streams)"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button><button class="btn btn--ghost btn--sm is-added" aria-label="Added to Late drives"><svg class="icon"><use href="#i-check"/></svg>Added</button></div></div>
+            <div class="row row--result"><div class="art art--4"><span>SA</span></div><div class="row__main"><div class="row__title">Scott Street</div><div class="row__sub"><svg class="icon sg sg--st" role="img" aria-label="Streams"><use href="#i-stream"/></svg><span class="row__artist">Phoebe Bridgers · Stranger in the Alps</span></div></div><div class="row__dur">5:05</div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Preview Scott Street (streams)"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button><button class="btn btn--secondary btn--sm" aria-label="Add Scott Street to Late drives"><svg class="icon"><use href="#i-plus"/></svg>Add</button></div></div>
+            <div class="row row--result"><div class="art art--4"><span>P</span></div><div class="row__main"><div class="row__title">I Know the End</div><div class="row__sub"><svg class="icon sg sg--st" role="img" aria-label="Streams"><use href="#i-stream"/></svg><span class="row__artist">Phoebe Bridgers · Punisher</span></div></div><div class="row__dur">5:44</div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Preview I Know the End (streams)"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button><button class="btn btn--secondary btn--sm" aria-label="Add I Know the End to Late drives"><svg class="icon"><use href="#i-plus"/></svg>Add</button></div></div>
+            <div class="row row--result"><div class="art art--3"><span>SA</span></div><div class="row__main"><div class="row__title">Funeral</div><div class="row__sub"><svg class="icon sg sg--st" role="img" aria-label="Streams"><use href="#i-stream"/></svg><span class="row__artist">Phoebe Bridgers · Stranger in the Alps</span></div></div><div class="row__dur">3:52</div><div class="row__actions"><button class="btn btn--icon btn--sm row__play" aria-label="Preview Funeral (streams)"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button><button class="btn btn--secondary btn--sm" aria-label="Add Funeral to Late drives"><svg class="icon"><use href="#i-plus"/></svg>Add</button></div></div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- Desktop player bar -->
+  <footer class="player-bar">
+    <div class="player-bar__now">
+      <div class="art art--1"><span>HW</span></div>
+      <div class="player-bar__meta"><div class="player-bar__title truncate">Heat Waves</div><div class="player-bar__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · Dreamland</span></div></div>
+      <button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button>
+    </div>
+    <div class="player-bar__center">
+      <div class="transport">
+        <button class="btn btn--icon" aria-label="Shuffle off"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+        <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+        <button class="btn btn--play" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+        <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+        <button class="btn btn--icon" aria-label="Repeat off"><svg class="icon"><use href="#i-repeat"/></svg></button>
+      </div>
+      <div class="scrubber scrubber--inline" style="--p:36%;--b:100%">
+        <div class="scrubber__times"><span>1:24</span></div>
+        <div class="scrubber__track"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div>
+        <div class="scrubber__times"><span>-2:34</span></div>
+      </div>
+    </div>
+    <div class="player-bar__right">
+      <button class="btn btn--icon" aria-label="Queue"><svg class="icon"><use href="#i-queue"/></svg></button>
+      <button class="btn btn--icon" aria-label="Sleep timer"><svg class="icon"><use href="#i-moon"/></svg></button>
+      <div class="volume" style="--p:70%"><svg class="icon muted"><use href="#i-volume"/></svg><div class="volume__track"><i class="volume__fill"></i><i class="volume__thumb"></i></div></div>
+    </div>
+  </footer>
+
+  <!-- Phone mini player + tab bar (pushed from Library, so Library stays active — same as voice/device) -->
+  <div class="mini-player" role="button" tabindex="0" aria-label="Open Now Playing">
+    <div class="mini-player__progress" style="--p:36%"><i></i></div>
+    <div class="art art--1"><span>HW</span></div>
+    <div class="mini-player__meta"><div class="mini-player__title truncate">Heat Waves</div><div class="mini-player__sub num"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · 1:24 / 3:58</span></div></div>
+    <button class="btn btn--icon" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+    <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+  </div>
+  <nav class="tabbar" aria-label="Primary">
+    <a class="tabbar__item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+    <a class="tabbar__item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+    <a class="tabbar__item is-active" href="library.html" aria-current="page"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+    <a class="tabbar__item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="tab-count" aria-label="3 active downloads">3</span></a>
+  </nav>
+</div>
+
+<!-- ======================================================================
+     STATE VARIANTS (review only)
+     ====================================================================== -->
+<div class="variants">
+  <div class="variants__intro">
+    <div class="eyebrow">State variants</div>
+    <h2 class="t-20">Playlist — edit, create, download-all, add-songs, imported, empty, loading, offline and errors</h2>
+    <p>Page body only; the shell, header and row anatomy are the same as the live screen above.</p>
+  </div>
+
+  <!-- EDIT -->
+  <section class="variant" aria-label="Edit mode">
+    <div class="variant__label"><h3 class="t-16">Edit</h3><p>Rename, reorder by drag handle, remove. “Pink + White” is mid-drag; the red line is where it will drop.</p></div>
+    <div class="variant__box">
+      <div class="edit-head">
+        <div class="mosaic" role="img" aria-label="Playlist artwork">
+          <div class="art art--1"><span>D</span></div><div class="art art--4"><span>SA</span></div>
+          <div class="art art--2"><span>C</span></div><div class="art art--5"><span>B</span></div>
+        </div>
+        <div class="edit-fields">
+          <div class="field"><label class="label" for="ed-name">Name</label><input class="input is-focus" id="ed-name" value="Late drives"></div>
+          <div class="field"><label class="label" for="ed-desc">Description <span class="faint">(optional)</span></label><input class="input" id="ed-desc" value="Windows down, city lights, nothing to skip."><span class="help">Artwork is made from the first four songs.</span></div>
+        </div>
+      </div>
+      <div class="list" aria-label="Songs, drag to reorder">
+            <div class="erow"><button class="erow__grip" aria-label="Drag to reorder Heat Waves"><svg class="icon"><use href="#i-grip"/></svg></button><div class="art art--1"><span>D</span></div><div class="row__main"><div class="row__title">Heat Waves</div><div class="row__sub"><span class="row__artist">Glass Animals</span></div></div><div class="row__dur">3:58</div><button class="btn btn--icon btn--sm erow__remove" aria-label="Remove Heat Waves from playlist"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            <div class="erow"><button class="erow__grip" aria-label="Drag to reorder Motion Sickness"><svg class="icon"><use href="#i-grip"/></svg></button><div class="art art--4"><span>SA</span></div><div class="row__main"><div class="row__title">Motion Sickness</div><div class="row__sub"><span class="row__artist">Phoebe Bridgers</span></div></div><div class="row__dur">3:49</div><button class="btn btn--icon btn--sm erow__remove" aria-label="Remove Motion Sickness from playlist"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            <div class="drop-line" aria-hidden="true"></div>
+            <div class="erow is-dragging"><button class="erow__grip" aria-label="Drag to reorder Pink + White"><svg class="icon"><use href="#i-grip"/></svg></button><div class="art art--5"><span>B</span></div><div class="row__main"><div class="row__title">Pink + White</div><div class="row__sub"><span class="row__artist">Frank Ocean</span></div></div><div class="row__dur">3:04</div><button class="btn btn--icon btn--sm erow__remove" aria-label="Remove Pink + White from playlist"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            <div class="erow"><button class="erow__grip" aria-label="Drag to reorder The Less I Know the Better"><svg class="icon"><use href="#i-grip"/></svg></button><div class="art art--2"><span>C</span></div><div class="row__main"><div class="row__title">The Less I Know the Better</div><div class="row__sub"><span class="row__artist">Tame Impala</span></div></div><div class="row__dur">3:36</div><button class="btn btn--icon btn--sm erow__remove" aria-label="Remove The Less I Know the Better from playlist"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+            <div class="erow"><button class="erow__grip" aria-label="Drag to reorder Redbone"><svg class="icon"><use href="#i-grip"/></svg></button><div class="art art--6"><span>AM</span></div><div class="row__main"><div class="row__title">Redbone</div><div class="row__sub"><span class="row__artist">Childish Gambino</span></div></div><div class="row__dur">5:27</div><button class="btn btn--icon btn--sm erow__remove" aria-label="Remove Redbone from playlist"><svg class="icon icon--16"><use href="#i-x"/></svg></button></div>
+      </div>
+      <div class="edit-bar">
+        <button class="btn btn--danger"><svg class="icon"><use href="#i-trash"/></svg>Delete playlist</button>
+        <span class="grow"></span>
+        <button class="btn btn--ghost">Cancel</button>
+        <button class="btn btn--primary"><svg class="icon"><use href="#i-check"/></svg>Save changes</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- CREATE -->
+  <section class="variant" id="create" aria-label="Create playlist">
+    <div class="variant__label"><h3 class="t-16">Create playlist</h3><p>Dialog on desktop, bottom sheet on phone. Opened from Library, the sidebar or “Add to playlist → New playlist”.</p></div>
+    <div class="mock-scrim desktop-only">
+      <div class="modal" role="dialog" aria-labelledby="cr-title">
+        <div class="modal__title" id="cr-title">New playlist</div>
+        <div class="art-pick">
+          <div class="art art--3"><span>SM</span></div>
+          <div class="help">Artwork is generated now and switches to a cover mosaic once you add four songs.</div>
+        </div>
+        <div class="field"><label class="label" for="cr-name">Name</label><input class="input is-focus" id="cr-name" value="Sunday mornings"></div>
+        <label class="toggle toggle--row"><span><span class="toggle__label">Download songs as I add them</span><span class="help help--block">Keeps this playlist playable offline</span></span><input type="checkbox" checked><span class="toggle__track"></span></label>
+        <div class="modal__actions"><button class="btn btn--ghost">Cancel</button><button class="btn btn--primary">Create playlist</button></div>
+      </div>
+    </div>
+    <div class="mock-scrim mock-scrim--sheet phone-only">
+      <div class="sheet" role="dialog" aria-labelledby="cr-title-m">
+        <div class="sheet__grab"></div>
+        <div class="sheet__title" id="cr-title-m">New playlist</div>
+        <div class="field"><label class="label" for="cr-name-m">Name</label><input class="input is-focus" id="cr-name-m" value="Sunday mornings"></div>
+        <label class="toggle toggle--row"><span><span class="toggle__label">Download songs as I add them</span><span class="help help--block">Keeps this playlist playable offline</span></span><input type="checkbox" checked><span class="toggle__track"></span></label>
+        <button class="btn btn--primary btn--lg btn--block">Create playlist</button>
+        <button class="btn btn--ghost btn--block">Cancel</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- CREATE: validation -->
+  <section class="variant" aria-label="Create playlist, name already used">
+    <div class="variant__label"><h3 class="t-16">Create playlist — name taken</h3><p>Inline error under the field; Create stays disabled until the name is unique or empty spaces are removed.</p></div>
+    <div class="mock-scrim">
+      <div class="modal" role="dialog" aria-labelledby="cr-err-title">
+        <div class="modal__title" id="cr-err-title">New playlist</div>
+        <div class="field"><label class="label" for="cr-err">Name</label><input class="input is-error" id="cr-err" value="Late drives" aria-describedby="cr-err-help" aria-invalid="true"><span class="help help--error" id="cr-err-help">You already have a playlist called “Late drives”. Pick another name.</span></div>
+        <label class="toggle toggle--row"><span><span class="toggle__label">Download songs as I add them</span><span class="help help--block">Keeps this playlist playable offline</span></span><input type="checkbox" checked><span class="toggle__track"></span></label>
+        <div class="modal__actions"><button class="btn btn--ghost">Cancel</button><button class="btn btn--primary" disabled>Create playlist</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD ALL: states -->
+  <section class="variant" aria-label="Download all states">
+    <div class="variant__label"><h3 class="t-16">Download all — not started, downloading, done</h3><p>The same slot in the action row; numbers always shown. Removing downloads lives in the ⋯ menu.</p></div>
+    <div class="variant__trio">
+      <div class="variant__box">
+        <span class="state-cap">Not started</span>
+        <div class="meta pl-meta num"><span><strong>12 songs</strong></span><span class="sep"></span><span>48 min</span><span class="sep"></span><span class="cluster"><svg class="icon sg sg--st" aria-hidden="true"><use href="#i-stream"/></svg>Streams · 0 downloaded</span></div>
+        <div class="cluster"><button class="btn btn--icon btn--primary pl-play" aria-label="Play Focus — no vocals"><svg class="icon"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--secondary" aria-label="Shuffle play"><svg class="icon"><use href="#i-shuffle"/></svg></button><button class="btn btn--secondary"><svg class="icon"><use href="#i-download"/></svg>Download all · 86 MB</button></div>
+      </div>
+      <div class="variant__box">
+        <span class="state-cap">Downloading</span>
+        <div class="progress-line" role="status">
+          <div class="progress-line__meta"><span>Downloading <strong>5 of 12</strong></span><strong class="num">41%</strong></div>
+          <div class="progress" style="--p:41%"><i></i></div>
+          <div class="progress-line__meta"><span>2.8 MB/s · 7 queued</span><span>about 2 min left</span></div>
+        </div>
+        <div class="cluster"><button class="btn btn--secondary btn--sm"><svg class="icon"><use href="#i-pause"/></svg>Pause</button><button class="btn btn--ghost btn--sm">Cancel</button></div>
+      </div>
+      <div class="variant__box">
+        <span class="state-cap">Done</span>
+        <div class="cluster"><span class="badge badge--ok"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Downloaded</span><span class="meta num">12 of 12 · 86 MB · plays offline</span></div>
+        <div class="menu" role="menu" aria-label="Playlist options">
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-edit"/></svg>Edit playlist</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-plus"/></svg>Add songs</button>
+          <div class="menu__sep"></div>
+          <button class="menu__item menu__item--danger" role="menuitem"><svg class="icon"><use href="#i-x-circle"/></svg>Remove downloads<span class="menu__hint">frees 86 MB</span></button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PHONE MENU -->
+  <section class="variant" aria-label="Phone playlist menu">
+    <div class="variant__label"><h3 class="t-16">⋯ menu</h3><p>Dropdown from the hero ⋯ on desktop; bottom sheet from the top-bar ⋯ on phone. Destructive actions sit last, behind this menu; Delete asks to confirm.</p></div>
+    <div class="variant__box desktop-only"><div class="menu" role="menu" aria-label="Late drives options (desktop ⋯ dropdown)">
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-plus"/></svg>Add songs</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-edit"/></svg>Edit: rename and reorder</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-queue"/></svg>Add to queue</button>
+          <div class="menu__sep"></div>
+          <button class="menu__item menu__item--danger" role="menuitem"><svg class="icon"><use href="#i-trash"/></svg>Delete playlist</button>
+        </div></div>
+    <div class="mock-scrim mock-scrim--menu phone-only">
+      <div class="sheet" role="dialog" aria-labelledby="pm-title">
+        <div class="sheet__grab"></div>
+        <div class="sheet-head">
+          <div class="mosaic" aria-hidden="true"><div class="art art--1"><span>D</span></div><div class="art art--4"><span>SA</span></div><div class="art art--2"><span>C</span></div><div class="art art--5"><span>B</span></div></div>
+          <div class="grow"><div class="sheet__title" id="pm-title">Late drives</div><div class="meta num">24 songs · 1 h 47 min</div></div>
+        </div>
+        <div class="menu" role="menu">
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-plus"/></svg>Add songs</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-edit"/></svg>Edit: rename and reorder</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-pause"/></svg>Pause download<span class="menu__hint num">19 of 24</span></button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-queue"/></svg>Add to queue</button>
+          <div class="menu__sep"></div>
+          <button class="menu__item menu__item--danger" role="menuitem"><svg class="icon"><use href="#i-trash"/></svg>Delete playlist</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SONG ROW MENU -->
+  <section class="variant" aria-label="Song row menu">
+    <div class="variant__label"><h3 class="t-16">Song row ⋯ menu</h3><p>Every song row ends with ⋯ (always visible, same column as on Search and Library). Shown for “Midnight City”, which isn’t downloaded yet; on a downloaded song the Download item reads “Remove download”.</p></div>
+    <div class="variant__box"><div class="menu" role="menu" aria-label="Midnight City options">
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-plus"/></svg>Add to playlist</button>
+          <button class="menu__item" role="menuitem"><svg class="icon"><use href="#i-download"/></svg>Download<span class="menu__hint num">7.8 MB</span></button>
+          <div class="menu__sep"></div>
+          <button class="menu__item menu__item--danger" role="menuitem"><svg class="icon"><use href="#i-trash"/></svg>Remove from Late drives</button>
+        </div></div>
+  </section>
+
+  <!-- ADD SONGS: states -->
+  <section class="variant" aria-label="Add songs states">
+    <div class="variant__label"><h3 class="t-16">Add songs — searching, no results, offline</h3><p>The inline search under the list. Offline, it searches only what’s on this device.</p></div>
+    <div class="variant__trio">
+      <div class="variant__box" aria-busy="true">
+        <span class="state-cap">Searching</span>
+        <div class="search"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" value="beach house" aria-label="Search songs to add"></div>
+        <div class="list">
+          <div class="skel-row"><span class="skel skel--art"></span><div class="stack"><span class="skel skel--title"></span><span class="skel skel--text w-40"></span></div><span class="skel skel--btn"></span></div>
+          <div class="skel-row"><span class="skel skel--art"></span><div class="stack"><span class="skel skel--title"></span><span class="skel skel--text"></span></div><span class="skel skel--btn"></span></div>
+          <div class="skel-row"><span class="skel skel--art"></span><div class="stack"><span class="skel skel--title"></span><span class="skel skel--text w-40"></span></div><span class="skel skel--btn"></span></div>
+        </div>
+      </div>
+      <div class="variant__box">
+        <span class="state-cap">No results</span>
+        <div class="search"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" value="phobe bridgres kyotto" aria-label="Search songs to add"></div>
+        <div class="empty empty--compact">
+          <div class="empty__icon"><svg class="icon"><use href="#i-search"/></svg></div>
+          <div class="empty__title">No songs match</div>
+          <p class="empty__text">Check the spelling or try just the artist name.</p>
+          <div class="empty__actions"><button class="btn btn--secondary btn--sm">Search “phoebe bridgers kyoto”</button></div>
+        </div>
+      </div>
+      <div class="variant__box">
+        <span class="state-cap">Offline</span>
+        <div class="search"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" value="tame" aria-label="Search songs to add"></div>
+        <div class="banner banner--warn"><svg class="icon"><use href="#i-offline"/></svg><div class="banner__body"><div class="banner__title">Searching needs internet</div><div class="banner__text">Showing matches from your downloads.</div></div></div>
+        <div class="list">
+          <div class="row row--result"><div class="art art--2"><span>C</span></div><div class="row__main"><div class="row__title">Eventually</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Tame Impala · Currents</span></div></div><div class="row__dur">5:19</div><div class="row__actions"><button class="btn btn--secondary btn--sm" aria-label="Add Eventually to Late drives"><svg class="icon"><use href="#i-plus"/></svg>Add</button></div></div>
+          <div class="row row--result"><div class="art art--4"><span>SR</span></div><div class="row__main"><div class="row__title">Borderline</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Tame Impala · The Slow Rush</span></div></div><div class="row__dur">3:58</div><div class="row__actions"><button class="btn btn--secondary btn--sm" aria-label="Add Borderline to Late drives"><svg class="icon"><use href="#i-plus"/></svg>Add</button></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- IMPORTED -->
+  <section class="variant" aria-label="Imported playlist">
+    <div class="variant__label"><h3 class="t-16">Imported playlist</h3><p>Created by Settings → Import from other apps (or the optional first-run step). Songs are ordinary YouTube Music songs — no source badges on rows; only the header notes where it came from.</p></div>
+    <div class="variant__box">
+      <section class="pl-hero">
+        <div class="mosaic" role="img" aria-label="Playlist artwork">
+          <div class="art art--3"><span>F</span></div><div class="art art--6"><span>MS</span></div>
+          <div class="art art--2"><span>K</span></div><div class="art art--5"><span>R</span></div>
+        </div>
+        <div class="pl-info">
+          <div class="eyebrow">Playlist</div>
+          <h1 class="t-28">Rainy Sundays</h1>
+          <div class="meta pl-meta num"><span><strong>38 songs</strong></span><span class="sep"></span><span>2 h 21 min</span><span class="sep"></span><span class="cluster"><svg class="icon sg sg--st" aria-hidden="true"><use href="#i-stream"/></svg>Streams · 0 downloaded</span></div>
+          <div class="pl-origin">Imported from Spotify on 14 Oct 2026</div>
+          <div class="cluster pl-actions"><button class="btn btn--icon btn--primary pl-play" aria-label="Play Rainy Sundays"><svg class="icon"><use href="#i-play"/></svg></button><button class="btn btn--icon btn--secondary" aria-label="Shuffle play"><svg class="icon"><use href="#i-shuffle"/></svg></button><button class="btn btn--secondary"><svg class="icon"><use href="#i-download"/></svg>Download all · 274 MB</button></div>
+        </div>
+      </section>
+      <div class="banner banner--info">
+        <svg class="icon"><use href="#i-info"/></svg>
+        <div class="banner__body"><div class="banner__title">2 songs from the original weren’t found</div><div class="banner__text">They’re listed in Settings → Import from other apps, where you can pick a match or skip them.</div></div>
+        <a class="btn btn--secondary btn--sm" href="settings.html">Review</a>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- EMPTY -->
+  <section class="variant" aria-label="Empty playlist">
+    <div class="variant__label"><h3 class="t-16">Empty — just created</h3><p>No Play or Shuffle yet; the one action is adding songs, inline.</p></div>
+    <div class="variant__box">
+      <section class="pl-hero">
+        <div class="mosaic mosaic--single" role="img" aria-label="Generated playlist artwork"><div class="art art--3"><span>SM</span></div></div>
+        <div class="pl-info">
+          <div class="eyebrow">Playlist</div>
+          <h1 class="t-28">Sunday mornings</h1>
+          <div class="meta pl-meta"><span><strong>0 songs</strong></span><span class="sep"></span><span>Created just now</span></div>
+        </div>
+      </section>
+      <div class="card empty empty--compact">
+        <div class="empty__icon"><svg class="icon"><use href="#i-playlist"/></svg></div>
+        <div class="empty__title">Add your first songs</div>
+        <p class="empty__text">Search YouTube Music or your library. You can also add from any song’s ⋯ menu.</p>
+        <div class="search search--lg empty__search"><svg class="icon"><use href="#i-search"/></svg><input class="search__input is-focus" placeholder="Songs, artists or albums" aria-label="Search songs to add"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LOADING -->
+  <section class="variant" aria-label="Loading">
+    <div class="variant__label"><h3 class="t-16">Loading</h3><p>Reading the playlist and checking which songs are on disk.</p></div>
+    <div class="variant__box" aria-busy="true">
+      <div class="pl-hero">
+        <span class="skel skel--mosaic"></span>
+        <div class="pl-info">
+          <span class="skel skel--text w-40"></span>
+          <span class="skel skel--h1"></span>
+          <span class="skel skel--text"></span>
+          <div class="pl-actions"><span class="skel skel--play"></span><span class="skel skel--circle"></span><span class="skel skel--btn"></span><span class="skel skel--btn skel--btn-lg"></span></div>
+        </div>
+      </div>
+      <div class="list">
+        <div class="skel-row skel-row--pl"><span class="skel skel--num"></span><span class="skel skel--art"></span><div class="stack"><span class="skel skel--title"></span><span class="skel skel--text w-40"></span></div><span class="skel skel--chip"></span></div>
+        <div class="skel-row skel-row--pl"><span class="skel skel--num"></span><span class="skel skel--art"></span><div class="stack"><span class="skel skel--title"></span><span class="skel skel--text"></span></div><span class="skel skel--chip"></span></div>
+        <div class="skel-row skel-row--pl"><span class="skel skel--num"></span><span class="skel skel--art"></span><div class="stack"><span class="skel skel--title"></span><span class="skel skel--text w-40"></span></div><span class="skel skel--chip"></span></div>
+        <div class="skel-row skel-row--pl"><span class="skel skel--num"></span><span class="skel skel--art"></span><div class="stack"><span class="skel skel--title"></span><span class="skel skel--text"></span></div><span class="skel skel--chip"></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OFFLINE -->
+  <section class="variant" aria-label="Offline">
+    <div class="variant__label"><h3 class="t-16">Offline</h3><p>Downloaded songs play; the rest are dimmed with the reason, and Play skips them.</p></div>
+    <div class="variant__box">
+      <div class="banner banner--warn">
+        <svg class="icon"><use href="#i-offline"/></svg>
+        <div class="banner__body"><div class="banner__title">You’re offline</div><div class="banner__text">6 of 24 songs aren’t downloaded and will play again when you reconnect. Play and Shuffle use the 18 downloaded songs.</div></div>
+      </div>
+      <div class="list">
+            <div class="row"><div class="row__num"><span>1</span><button class="btn btn--icon btn--sm" aria-label="Play Heat Waves"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--1"><span>D</span></div><div class="row__main"><div class="row__title">Heat Waves</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Glass Animals</span></div></div><div class="row__album">Dreamland</div><div class="row__dur">3:58</div><button class="btn btn--icon btn--sm like row__like is-liked" aria-label="Liked Heat Waves"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Heat Waves"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+            <div class="row"><div class="row__num"><span>2</span><button class="btn btn--icon btn--sm" aria-label="Play Motion Sickness"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--4"><span>SA</span></div><div class="row__main"><div class="row__title">Motion Sickness</div><div class="row__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span class="row__artist">Phoebe Bridgers</span></div></div><div class="row__album">Stranger in the Alps</div><div class="row__dur">3:49</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Motion Sickness"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Motion Sickness"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+            <div class="row is-disabled"><div class="row__num"><span>19</span><button class="btn btn--icon btn--sm" aria-label="Play Midnight City"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--1"><span>M</span></div><div class="row__main"><div class="row__title">Midnight City</div><div class="row__sub"><span class="dl-stream"><svg class="icon sg sg--st" aria-hidden="true"><use href="#i-stream"/></svg>Needs internet</span><span class="row__artist">M83</span></div></div><div class="row__album">Hurry Up, We’re Dreaming</div><div class="row__dur">4:03</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Midnight City"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Midnight City"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+            <div class="row is-disabled"><div class="row__num"><span>21</span><button class="btn btn--icon btn--sm" aria-label="Play Instant Crush"><svg class="icon icon--16 icon--fill"><use href="#i-play"/></svg></button></div><div class="art art--2"><span>RA</span></div><div class="row__main"><div class="row__title">Instant Crush</div><div class="row__sub"><span class="dl-stream"><svg class="icon sg sg--st" aria-hidden="true"><use href="#i-stream"/></svg>Needs internet</span><span class="row__artist">Daft Punk</span></div></div><div class="row__album">Random Access Memories</div><div class="row__dur">5:37</div><button class="btn btn--icon btn--sm like row__like" aria-label="Like Instant Crush"><svg class="icon icon--16"><use href="#i-heart"/></svg></button><button class="btn btn--icon btn--sm row__menu" aria-label="More options for Instant Crush"><svg class="icon icon--16"><use href="#i-more"/></svg></button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ERRORS -->
+  <section class="variant" aria-label="Errors">
+    <div class="variant__label"><h3 class="t-16">Errors</h3><p>Download-all stopped by disk space, and a playlist file that can’t be read.</p></div>
+    <div class="variant__split">
+      <div class="variant__box">
+        <div class="banner banner--warn">
+          <svg class="icon"><use href="#i-alert"/></svg>
+          <div class="banner__body"><div class="banner__title">Download paused — storage full</div><div class="banner__text num">6 songs left need about 54 MB; 38 MB free on this device.</div></div>
+          <a class="btn btn--secondary btn--sm" href="downloads.html">Manage storage</a>
+        </div>
+        <div class="progress-line">
+          <div class="progress-line__meta"><span>Paused at <strong>18 of 24</strong></span><strong class="num">75%</strong></div>
+          <div class="progress progress--paused" style="--p:75%"><i></i></div>
+        </div>
+      </div>
+      <div class="variant__box">
+        <div class="empty empty--compact empty--error">
+          <div class="empty__icon"><svg class="icon"><use href="#i-x-circle"/></svg></div>
+          <div class="empty__title">Couldn’t open “Late drives”</div>
+          <p class="empty__text">The playlist file is damaged. Your songs are safe in Library → Downloads.</p>
+          <div class="empty__actions"><button class="btn btn--primary"><svg class="icon"><use href="#i-refresh"/></svg>Try again</button><a class="btn btn--secondary" href="library.html">Back to Library</a></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+</body>
+</html>

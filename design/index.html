@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Player Design</title>
+<link rel="stylesheet" href="system.css">
+<style>
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--page); color: var(--text); font-family: var(--font);
+    display: grid; grid-template-columns: 232px 1fr; overflow: hidden;
+  }
+  .rail {
+    background: var(--surface); border-right: var(--border-w) solid var(--border);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .rail__head { padding: var(--sp-4) var(--sp-4) var(--sp-2); }
+  .rail__head h1 { font-size: var(--fs-16); margin: 0; font-weight: var(--fw-bold); }
+  .rail__head p { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-3); }
+  .rail nav { flex: 1; overflow: auto; padding: var(--sp-2); }
+  .rail button.scr {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2);
+    width: 100%; text-align: left; border: 0; background: transparent; color: var(--text-2);
+    font: inherit; font-size: var(--fs-14); padding: 8px 12px; border-radius: var(--r-ctl);
+    cursor: pointer;
+  }
+  .rail button.scr:hover { background: var(--surface-2); color: var(--text); }
+  .rail button.scr[aria-current="true"] { background: var(--accent-soft); color: var(--accent-text); font-weight: var(--fw-semibold); }
+  .rail button.scr:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .rail .num { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-3); }
+  .rail .right { display: inline-flex; align-items: center; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; font-size: 11px; font-weight: var(--fw-semibold); line-height: 1; padding: 3px 7px; border-radius: var(--r-pill); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .chip--ok { background: var(--ok-soft); color: var(--ok); }
+  .chip--warn { background: var(--warn-soft); color: var(--warn); }
+  .rail hr { border: 0; border-top: var(--border-w) solid var(--border); margin: var(--sp-2) 4px; }
+  .rail__foot { padding: var(--sp-3) var(--sp-4); font-size: var(--fs-12); color: var(--text-3); border-top: var(--border-w) solid var(--border); }
+  kbd { font-family: var(--font-mono); font-size: 11px; padding: 1px 5px; border: var(--border-w) solid var(--border-strong); border-radius: 4px; background: var(--surface-2); }
+
+  main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .bar {
+    display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+    padding: var(--sp-3) var(--sp-4); border-bottom: var(--border-w) solid var(--border); background: var(--surface);
+  }
+  .bar h2 { font-size: var(--fs-16); margin: 0; font-weight: var(--fw-semibold); }
+  .bar .meta { font-size: var(--fs-12); color: var(--text-3); font-family: var(--font-mono); }
+  .bar .sp { flex: 1; }
+  .seg { display: inline-flex; border: var(--border-w) solid var(--border-strong); border-radius: var(--r-pill); padding: 2px; background: var(--surface-2); }
+  .seg button {
+    border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: var(--fs-13);
+    padding: 5px 12px; border-radius: var(--r-pill); cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: var(--fw-semibold); box-shadow: var(--shadow-1); }
+  .seg button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .bar a.open { font-size: var(--fs-13); color: var(--accent-text); }
+
+  .stage { flex: 1; min-height: 0; position: relative; overflow: hidden; display: grid; place-items: center; padding: var(--sp-4); }
+  .frame {
+    position: absolute; left: 50%; top: 50%; transform-origin: center center;
+    background: var(--surface-3); box-shadow: var(--shadow-3);
+  }
+  .frame.desktop { border-radius: 12px; padding: 28px 0 0; border: var(--border-w) solid var(--border-strong); }
+  .frame.desktop::before {
+    content: ""; position: absolute; top: 10px; left: 14px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--border-strong); box-shadow: 14px 0 0 var(--border-strong), 28px 0 0 var(--border-strong);
+  }
+  .frame.phone { border-radius: 52px; padding: 14px; background: #1F1D1A; }
+  .frame.phone::before {
+    content: ""; position: absolute; top: 24px; left: 50%; transform: translateX(-50%);
+    width: 96px; height: 26px; border-radius: 14px; background: #000; z-index: 2; pointer-events: none;
+  }
+  .frame iframe { display: block; border: 0; background: var(--page); }
+  .frame.desktop iframe { border-radius: 0 0 11px 11px; }
+  .frame.phone iframe { border-radius: 40px; }
+
+  @media (max-width: 720px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; overflow: auto; }
+    .rail { border-right: 0; border-bottom: var(--border-w) solid var(--border); }
+    .rail nav { display: flex; overflow-x: auto; gap: 4px; }
+    .rail button.scr { width: auto; white-space: nowrap; }
+    .rail .num, .rail hr, .rail__foot { display: none; }
+  }
+</style>
+</head>
+<body>
+<aside class="rail">
+  <div class="rail__head">
+    <h1>Offline Player v2</h1>
+    <p>UI design review &middot; 9 of 11 approved</p>
+  </div>
+  <nav id="nav" aria-label="Screens"></nav>
+  <div class="rail__foot"><kbd>&uarr;</kbd> <kbd>&darr;</kbd> switch screens &middot; <kbd>D</kbd> device &middot; <kbd>T</kbd> theme</div>
+</aside>
+<main>
+  <div class="bar">
+    <h2 id="title">Home</h2>
+    <span id="status"></span>
+    <span class="meta" id="dims"></span>
+    <span class="sp"></span>
+    <div class="seg" role="group" aria-label="Device">
+      <button data-device="desktop" aria-pressed="true">Desktop</button>
+      <button data-device="phone" aria-pressed="false">Phone</button>
+    </div>
+    <div class="seg" role="group" aria-label="Theme">
+      <button data-theme-btn="light" aria-pressed="true">Light</button>
+      <button data-theme-btn="dark" aria-pressed="false">Dark</button>
+    </div>
+    <a class="open" id="open" href="screens/home.html" target="_blank" rel="noopener">Open alone &#8599;</a>
+  </div>
+  <div class="stage" id="stage">
+    <div class="frame desktop" id="frame"><iframe id="view" title="Screen preview"></iframe></div>
+  </div>
+</main>
+<script>
+(function () {
+  var SCREENS = [
+    ['onboarding', 'Onboarding'], ['home', 'Home'], ['search', 'Search'], ['library', 'Library'],
+    ['playlist', 'Playlist'], ['now-playing', 'Now playing'], ['notification', 'Notification'], ['downloads', 'Downloads'], ['voice', 'Voice'],
+    ['device', 'Device'], ['settings', 'Settings'], ['_components', 'Components']
+  ];
+  var STATUS = {};
+  [{"id":"onboarding","approved":false,"score":8.5},{"id":"home","approved":true,"score":8.6},{"id":"search","approved":true,"score":8.5},{"id":"library","approved":false,"score":8.4},{"id":"playlist","approved":true,"score":8.5},{"id":"now-playing","approved":true,"score":9},{"id":"notification","approved":true,"score":8.6},{"id":"downloads","approved":true,"score":9},{"id":"voice","approved":true,"score":9},{"id":"device","approved":true,"score":8.6},{"id":"settings","approved":true,"score":8.7}]
+    .forEach(function (r) { STATUS[r.id] = r; });
+  function chip(id) {
+    var r = STATUS[id]; if (!r) return null;
+    var c = document.createElement('span');
+    c.className = 'chip ' + (r.approved ? 'chip--ok' : 'chip--warn');
+    c.textContent = (r.approved ? '\u2713 ' : '\u25CF ') + r.score.toFixed(1);
+    c.title = (r.approved ? 'Approved' : 'In review') + ' \u00B7 score ' + r.score.toFixed(1) + '/10';
+    return c;
+  }
+  var SIZES = { desktop: [1440, 900], phone: [390, 844] };
+  var state = { i: 1, device: 'desktop', theme: 'light' };
+
+  function load() {
+    try {
+      var s = JSON.parse(localStorage.getItem('design-gallery') || '{}');
+      if (typeof s.i === 'number' && SCREENS[s.i]) state.i = s.i;
+      if (SIZES[s.device]) state.device = s.device;
+      if (s.theme === 'dark' || s.theme === 'light') state.theme = s.theme;
+    } catch (e) {}
+    var h = location.hash.slice(1);
+    SCREENS.forEach(function (s, idx) { if (s[0] === h) state.i = idx; });
+  }
+  function save() { try { localStorage.setItem('design-gallery', JSON.stringify(state)); } catch (e) {} }
+
+  var nav = document.getElementById('nav');
+  var view = document.getElementById('view');
+  var frame = document.getElementById('frame');
+  var stage = document.getElementById('stage');
+
+  SCREENS.forEach(function (s, idx) {
+    if (s[0] === '_components') nav.appendChild(document.createElement('hr'));
+    var b = document.createElement('button');
+    b.className = 'scr'; b.type = 'button'; b.dataset.idx = idx;
+    var label = document.createElement('span'); label.textContent = s[1];
+    var num = document.createElement('span'); num.className = 'num';
+    num.textContent = s[0] === '_components' ? '_' : String(idx + 1).padStart(2, '0');
+    var right = document.createElement('span'); right.className = 'right';
+    var ch = chip(s[0]); if (ch) right.appendChild(ch);
+    right.appendChild(num);
+    b.appendChild(label); b.appendChild(right);
+    b.addEventListener('click', function () { state.i = idx; render(); });
+    nav.appendChild(b);
+  });
+
+  function url() {
+    var id = SCREENS[state.i][0];
+    return 'screens/' + id + '.html' + (state.theme === 'dark' ? '?theme=dark' : '');
+  }
+
+  function fit() {
+    var sz = SIZES[state.device];
+    var pad = state.device === 'phone' ? 28 : 2;
+    var top = state.device === 'phone' ? 28 : 30;
+    var w = sz[0] + pad, h = sz[1] + top;
+    var availW = stage.clientWidth - 32, availH = stage.clientHeight - 32;
+    var scale = Math.min(1, availW / w, availH / h);
+    frame.style.transform = 'translate(-50%, -50%) scale(' + scale + ')';
+    document.getElementById('dims').textContent = sz[0] + '×' + sz[1] + ' @ ' + Math.round(scale * 100) + '%';
+  }
+
+  function render() {
+    var sz = SIZES[state.device];
+    frame.className = 'frame ' + state.device;
+    view.style.width = sz[0] + 'px'; view.style.height = sz[1] + 'px';
+    var u = url();
+    if (view.getAttribute('src') !== u) view.setAttribute('src', u);
+    document.getElementById('open').href = u;
+    document.getElementById('title').textContent = SCREENS[state.i][1];
+    var st = document.getElementById('status'); st.innerHTML = '';
+    var r = STATUS[SCREENS[state.i][0]];
+    if (r) { var big = chip(SCREENS[state.i][0]); big.textContent = (r.approved ? 'Approved' : 'In review') + ' \u00B7 ' + r.score.toFixed(1) + '/10'; st.appendChild(big); }
+    document.documentElement.dataset.theme = state.theme;
+    nav.querySelectorAll('button.scr').forEach(function (b) {
+      b.setAttribute('aria-current', String(+b.dataset.idx === state.i));
+    });
+    document.querySelectorAll('[data-device]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.device === state.device));
+    });
+    document.querySelectorAll('[data-theme-btn]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.themeBtn === state.theme));
+    });
+    try { history.replaceState(null, '', '#' + SCREENS[state.i][0]); } catch (e) {}
+    fit(); save();
+  }
+
+  document.querySelectorAll('[data-device]').forEach(function (b) {
+    b.addEventListener('click', function () { state.device = b.dataset.device; render(); });
+  });
+  document.querySelectorAll('[data-theme-btn]').forEach(function (b) {
+    b.addEventListener('click', function () { state.theme = b.dataset.themeBtn; render(); });
+  });
+
+  function step(d) { state.i = (state.i + d + SCREENS.length) % SCREENS.length; render(); }
+  document.addEventListener('keydown', function (e) {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    var t = e.target.tagName;
+    if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { e.preventDefault(); step(1); }
+    else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
+    else if (e.key === 'd' || e.key === 'D') { state.device = state.device === 'desktop' ? 'phone' : 'desktop'; render(); }
+    else if (e.key === 't' || e.key === 'T') { state.theme = state.theme === 'dark' ? 'light' : 'dark'; render(); }
+  });
+  // Keep arrow keys working after clicking into the iframe (same-origin file:// may block; ignore errors).
+  view.addEventListener('load', function () {
+    try {
+      view.contentWindow.document.addEventListener('keydown', function (e) {
+        if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].indexOf(e.key) < 0) return;
+        var tg = e.target.tagName;
+        if (tg === 'INPUT' || tg === 'TEXTAREA' || tg === 'SELECT') return;
+        e.preventDefault(); step(e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1);
+      });
+    } catch (err) {}
+  });
+
+  window.addEventListener('resize', fit);
+  load(); render();
+})();
+</script>
+</body>
+</html>

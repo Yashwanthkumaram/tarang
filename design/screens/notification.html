@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Player — Background playback</title>
+<script>document.documentElement.dataset.theme=new URLSearchParams(location.search).get('theme')||'light'</script>
+<script>/* ?state=<id> shows only the review state tagged data-state="<id>" */(function(){var s=new URLSearchParams(location.search).get('state');if(!s)return;addEventListener('DOMContentLoaded',function(){var t=document.querySelector('[data-state="'+s+'"]');if(!t)return;for(var n=t;n&&n!==document.body;n=n.parentElement){var p=n.parentElement;if(!p)break;for(var i=0;i<p.children.length;i++){var c=p.children[i];if(c!==n&&!/^(SCRIPT|STYLE)$/.test(c.tagName)&&c.id!=='sprite')c.style.display='none';}}t.style.margin='0';window.scrollTo(0,0);});})()</script>
+<link rel="stylesheet" href="../system.css">
+<style>
+  /* Breadcrumb: shared sub-page pattern (back arrow + breadcrumb) */
+  .crumb { display: flex; align-items: center; gap: var(--sp-1); font-size: var(--fs-13); color: var(--text-2); margin-bottom: var(--sp-1); }
+  .crumb a { color: var(--text-2); }
+  .crumb a:hover { color: var(--text); }
+  .crumb .icon { width: 14px; height: 14px; color: var(--text-3); }
+  /* Notification screen — layout only. Every colour, size and radius is a system.css token
+     (system-UI radii are token multiples: phone corner = 3 × card radius, Android card = 2 × card radius). */
+
+  .btn--play { padding: 0; }
+
+  /* Section intro + mock grid */
+  .mock-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-6); align-items: start; }
+  .mock { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+  .mock__cap { display: flex; flex-direction: column; gap: var(--sp-1); }
+  .mock__cap h4 { display: flex; align-items: center; gap: var(--sp-2); }
+  .mock__cap p { font-size: var(--fs-13); color: var(--text-2); }
+  .notes { display: flex; flex-direction: column; gap: var(--sp-2); font-size: var(--fs-13); color: var(--text-2); }
+  .notes li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: var(--sp-2); align-items: start; }
+  .notes b { color: var(--text); font-weight: var(--fw-semibold); }
+  .pin { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: var(--on-accent); font-size: var(--fs-12); font-weight: var(--fw-bold); display: inline-grid; place-items: center; line-height: 1; flex: none; font-variant-numeric: tabular-nums; box-shadow: 0 0 0 var(--halo-w) var(--surface); }
+  .pinned { position: relative; }
+  .pin--abs { position: absolute; top: calc(var(--sp-2) * -1); left: calc(var(--sp-2) * -1); z-index: 3; }
+  .pin--r { left: auto; right: calc(var(--sp-2) * -1); }
+
+  /* ---------------- Phone device frame ---------------- */
+  .device { position: relative; width: 320px; max-width: 100%; height: 620px; margin: 0 auto; border: var(--sp-2) solid var(--text); border-radius: calc(var(--r-card) * 3); background: var(--surface-2); overflow: hidden; box-shadow: var(--shadow-3); display: flex; flex-direction: column; }
+  :root[data-theme="dark"] .device { border-color: var(--surface-3); }
+  .device::before { content: ""; position: absolute; top: var(--sp-2); left: 50%; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--text); z-index: 4; }
+  :root[data-theme="dark"] .device::before { background: var(--page); }
+  .sbar { display: flex; align-items: center; justify-content: space-between; height: 28px; padding: 0 var(--sp-5); font-size: var(--fs-12); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; flex: none; }
+  .sbar__icons { display: flex; align-items: center; gap: var(--sp-1); }
+  .sbar .icon { width: 14px; height: 14px; }
+
+  /* Shade (Android 13+ quick settings + notifications) */
+  .shade { background: var(--surface-2); display: flex; flex-direction: column; gap: var(--sp-3); padding: 0 var(--sp-3) var(--sp-3); }
+  .shade--part { border-radius: 0 0 calc(var(--r-card) * 2) calc(var(--r-card) * 2); box-shadow: var(--shadow-2); position: relative; z-index: 2; }
+  .shade__head { display: flex; align-items: baseline; justify-content: space-between; padding: 0 var(--sp-2); }
+  .shade__clock { font-size: var(--fs-28); font-weight: var(--fw-regular); letter-spacing: var(--track-title); font-variant-numeric: tabular-nums; }
+  .shade__date { font-size: var(--fs-13); color: var(--text-2); }
+  .qqs { display: flex; justify-content: space-between; padding: 0 var(--sp-1); }
+  .qqs i { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); color: var(--text); }
+  .qqs i.on, .qs i.on { background: var(--text); color: var(--page); }
+  .qs { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); }
+  .qs i { height: 44px; border-radius: var(--r-pill); background: var(--surface); color: var(--text); display: flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-3); font-style: normal; font-size: var(--fs-12); font-weight: var(--fw-semibold); }
+  .qs .icon, .qqs .icon { width: 18px; height: 18px; }
+  .shade__under { flex: 1; background: var(--page); position: relative; margin-top: calc(var(--r-card) * -2); padding-top: calc(var(--r-card) * 2 + var(--sp-4)); }
+  .shade__under::after { content: ""; position: absolute; inset: 0; background: var(--scrim); }
+  .shade__ghost { padding: 0 var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+  .shade__ghost .cluster { flex-wrap: nowrap; }
+  .shade__foot { display: flex; justify-content: space-between; padding: 0 var(--sp-2); font-size: var(--fs-12); font-weight: var(--fw-semibold); }
+  .shade__foot span { min-height: 32px; display: inline-flex; align-items: center; padding: 0 var(--sp-3); border-radius: var(--r-pill); background: var(--surface); }
+  .handle { width: 32px; height: 4px; border-radius: var(--r-pill); background: var(--border-strong); margin: 0 auto; }
+
+  /* Android media card — artwork fills the card under a scrim */
+  .mc { position: relative; border-radius: calc(var(--r-card) * 2); background: var(--art-1); color: var(--on-accent); padding: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-3); }
+  .mc.art--2 { background: var(--art-2); } .mc.art--5 { background: var(--art-5); } .mc.art--3 { background: var(--art-3); }
+  .mc::before { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--scrim); }
+  .mc > svg.mc__bg { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--on-accent); opacity: .16; clip-path: inset(0 round calc(var(--r-card) * 2)); }
+  .mc > :not(svg) { position: relative; }
+  .mc > .pin.pin--abs { position: absolute; }
+  .pin--app { top: calc(var(--sp-4) + 2px); left: calc(var(--sp-3) * -1); }
+  .mc__top { display: flex; align-items: center; justify-content: space-between; }
+  .mc__app { width: 24px; height: 24px; border-radius: 50%; background: var(--on-accent); color: var(--accent); display: grid; place-items: center; }
+  .mc__app .icon { width: 12px; height: 12px; fill: currentColor; stroke: none; }
+  .mc__out { display: inline-flex; align-items: center; gap: var(--sp-1); height: 28px; padding: 0 var(--sp-3); border-radius: var(--r-pill); background: color-mix(in srgb, var(--on-accent) 20%, transparent); font-size: var(--fs-12); font-weight: var(--fw-semibold); }
+  .mc__out .icon { width: 14px; height: 14px; }
+  .mc__mid { display: flex; align-items: flex-end; gap: var(--sp-3); }
+  .mc__meta { flex: 1; min-width: 0; }
+  .mc__title { font-size: var(--fs-16); font-weight: var(--fw-semibold); line-height: 1.3; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mc__sub { font-size: var(--fs-13); opacity: .9; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: flex; align-items: center; gap: var(--sp-1); }
+  /* Android draws this button from the media style, not the app theme: always a light chip with the artwork/brand tint, in both themes */
+  .mc__play { width: 52px; height: 52px; border-radius: calc(var(--r-card) * 1.5); background: var(--on-accent); color: var(--accent); display: grid; place-items: center; flex: none; box-shadow: var(--shadow-1); }
+  .mc__src { width: 14px; height: 14px; flex: none; stroke-width: 2.5; }
+  .mc__play .icon { width: 22px; height: 22px; fill: currentColor; stroke: none; }
+  .mc__play:hover, .mc__play.is-hover { background: color-mix(in srgb, var(--on-accent) 88%, var(--accent)); }
+  .mc__bottom { display: flex; align-items: center; gap: var(--sp-1); }
+  .mc__btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: var(--on-accent); flex: none; }
+  .mc__btn .icon { width: 20px; height: 20px; }
+  .mc__btn:hover, .mc__btn.is-hover { background: color-mix(in srgb, var(--on-accent) 16%, transparent); }
+  .mc__btn.is-liked .icon { fill: currentColor; }
+  .mc__btn:disabled { opacity: .45; }
+  .mc__seek { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .mc__track { position: relative; height: 20px; display: flex; align-items: center; }
+  .mc__track::before { content: ""; position: absolute; left: 0; right: 0; height: 4px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--on-accent) 28%, transparent); }
+  .mc__track i { position: absolute; left: 0; height: 4px; border-radius: var(--r-pill); }
+  .mc__buf { width: var(--b, 0%); background: color-mix(in srgb, var(--on-accent) 50%, transparent); }
+  .mc__fill { width: var(--p, 0%); background: var(--on-accent); }
+  .mc__thumb { left: var(--p, 0%) !important; width: 4px !important; height: 16px !important; margin-left: -2px; background: var(--on-accent); }
+  .mc__times { display: flex; justify-content: space-between; font-size: var(--fs-12); font-variant-numeric: tabular-nums; opacity: .9; }
+  .mc--compact { padding: var(--sp-3); flex-direction: row; align-items: center; gap: var(--sp-2); }
+  .mc--compact > .mc__app { display: none; }
+  .mc--compact .mc__meta { padding-left: var(--sp-1); }
+  .mc--compact .mc__play { width: 40px; height: 40px; border-radius: var(--r-card); }
+  .mc--compact { gap: var(--sp-1); }
+  .mc--compact .mc__btn { width: 32px; height: 40px; }
+  .mc--compact .mc__meta { padding-left: var(--sp-1); }
+  .mc__bottom .mc__btn { width: 36px; height: 44px; border-radius: var(--r-card); }
+  .mc__bottom { gap: 0; margin: 0 calc(var(--sp-2) * -1); }
+  .mc__seek { padding: 0 var(--sp-1); }
+  .mc .spinner { border-color: color-mix(in srgb, var(--accent) 25%, var(--on-accent)); border-top-color: var(--accent); }
+
+  /* Ordinary Android notification (downloads foreground service) */
+  .an { background: var(--surface); border-radius: calc(var(--r-card) * 2); padding: var(--sp-3) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-2); }
+  .an__head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-12); color: var(--text-2); }
+  .an__head .brand-mark { width: 18px; height: 18px; border-radius: 50%; }
+  .an__head .brand-mark .icon { width: 10px; height: 10px; }
+  .an__title { font-weight: var(--fw-semibold); font-size: var(--fs-14); }
+  .an__text { font-size: var(--fs-13); color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .an__acts { display: flex; gap: var(--sp-4); font-size: var(--fs-13); font-weight: var(--fw-semibold); color: var(--accent-text); }
+  .an__acts span { min-height: 32px; display: inline-flex; align-items: center; }
+
+  /* Lock screen */
+  .lock { flex: 1; position: relative; background: var(--art-6); color: var(--on-accent); display: flex; flex-direction: column; overflow: hidden; }
+  .lock > svg.lock__wall { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--on-accent); opacity: .1; }
+  .lock > :not(svg) { position: relative; }
+  .lock__clock { text-align: center; padding: var(--sp-6) 0 var(--sp-1); font-size: calc(var(--fs-36) * 2); font-weight: var(--fw-regular); line-height: 1; letter-spacing: var(--track-title); font-variant-numeric: tabular-nums; }
+  .lock__date { text-align: center; font-size: var(--fs-14); font-weight: var(--fw-medium); opacity: .92; }
+  .lock__body { padding: var(--sp-6) var(--sp-3) 0; display: flex; flex-direction: column; gap: var(--sp-3); flex: 1; }
+  .lock .mc { box-shadow: var(--shadow-2); }
+  .lock__foot { display: flex; align-items: flex-end; justify-content: space-between; padding: var(--sp-3) var(--sp-5) var(--sp-5); }
+  .lock__fab { width: 44px; height: 44px; border-radius: 50%; background: color-mix(in srgb, var(--on-accent) 18%, transparent); display: grid; place-items: center; }
+  .lock__fab .icon { width: 18px; height: 18px; }
+  .lock__hint { display: flex; flex-direction: column; align-items: center; gap: var(--sp-1); font-size: var(--fs-12); opacity: .92; }
+  .lock__hint .icon { width: 16px; height: 16px; }
+  .lock__an { background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--text); }
+
+  /* ---------------- Desktop (Linux, MPRIS) ---------------- */
+  .desk-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: var(--sp-6); align-items: start; }
+  .desk { position: relative; height: 440px; border-radius: var(--r-card); overflow: hidden; background: var(--art-2); box-shadow: var(--shadow-2); border: 1px solid var(--border); }
+  .desk > svg.desk__wall { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--on-accent); opacity: .1; }
+  .desk__bar { position: relative; height: 28px; background: var(--text); color: var(--page); display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-3); font-size: var(--fs-12); font-weight: var(--fw-semibold); font-variant-numeric: tabular-nums; }
+  .desk__bar .icon { width: 14px; height: 14px; }
+  .desk__clock { padding: 2px var(--sp-3); border-radius: var(--r-pill); background: color-mix(in srgb, var(--page) 22%, transparent); }
+  .desk__bar--bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; }
+  .desk__task { display: flex; align-items: center; gap: var(--sp-2); }
+  .desk__task i { width: 28px; height: 28px; border-radius: var(--r-sm); display: grid; place-items: center; }
+  .desk__task i.is-open { background: color-mix(in srgb, var(--page) 18%, transparent); }
+  .desk__task .brand-mark { width: 20px; height: 20px; border-radius: var(--r-sm); }
+  .desk__task .brand-mark .icon { width: 12px; height: 12px; }
+  .pop { position: absolute; background: var(--surface); color: var(--text); border-radius: var(--r-card); box-shadow: var(--shadow-3); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-3); border: 1px solid var(--border); }
+  .pop--gnome { top: calc(28px + var(--sp-2)); left: 50%; transform: translateX(-50%); width: min(400px, calc(100% - var(--sp-8))); }
+  .pop--kde { bottom: calc(40px + var(--sp-2)); right: var(--sp-3); width: min(320px, calc(100% - var(--sp-6))); padding: var(--sp-4); }
+  .gm { background: var(--surface-2); border-radius: var(--r-card); padding: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
+  .gm__head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-12); color: var(--text-2); font-weight: var(--fw-semibold); }
+  .gm__head .brand-mark { width: 16px; height: 16px; border-radius: var(--r-sm); }
+  .gm__head .brand-mark .icon { width: 10px; height: 10px; }
+  .gm__body { display: flex; align-items: center; gap: var(--sp-3); }
+  .gm__body .art { width: 48px; height: 48px; }
+  .gm__meta { flex: 1; min-width: 0; }
+  .gm__title { font-weight: var(--fw-semibold); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .gm__sub { font-size: var(--fs-13); color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .gm .btn--icon { width: 32px; height: 32px; }
+  .gm .btn--icon .icon { width: 16px; height: 16px; }
+  .gm .btn--icon.is-fill .icon { fill: currentColor; stroke: none; }
+  .cal { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; font-size: var(--fs-12); text-align: center; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .cal span { height: 24px; display: grid; place-items: center; border-radius: 50%; }
+  .cal .is-today { background: var(--text); color: var(--page); font-weight: var(--fw-semibold); }
+  .kp__art { width: 100%; }
+  .kp { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .kp__head { display: flex; gap: var(--sp-3); align-items: center; }
+  .kp__head .art { width: 96px; height: 96px; font-size: var(--fs-28); }
+  .kp .transport { justify-content: center; }
+  .kp .transport .btn--play { width: 40px; height: 40px; }
+  .kp .transport .btn--icon { width: 32px; height: 32px; }
+
+  .mpris .srow__value { font-family: var(--font-mono); font-size: var(--fs-12); }
+  .mpris .srow { align-items: flex-start; }
+  .mpris .srow__main { flex: 0 0 180px; }
+
+  /* Variants */
+  .variants { width: 100%; max-width: var(--content-max); margin: 0 auto; padding: var(--sp-10) var(--gutter) var(--sp-16); display: flex; flex-direction: column; gap: var(--sp-10); }
+  .variants__intro { border-top: 1px solid var(--border); padding-top: var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-1); }
+  .variants__intro p { color: var(--text-2); max-width: 640px; }
+  .variant { display: flex; flex-direction: column; gap: var(--sp-3); }
+  .variant__label { display: flex; align-items: baseline; gap: var(--sp-3); flex-wrap: wrap; }
+  .variant__label p { color: var(--text-2); font-size: var(--fs-13); max-width: 760px; }
+  .variant__box { background: var(--page); border: 1px solid var(--border); border-radius: var(--r-card); padding: var(--sp-6); }
+  .vgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-6); align-items: start; }
+  .vcell { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+  .vcell .shade { border-radius: calc(var(--r-card) * 2); padding: var(--sp-3); }
+  .vcell__cap { font-size: var(--fs-13); color: var(--text-2); }
+  .vcell__cap b { color: var(--text); font-weight: var(--fw-semibold); }
+  .device--short { height: 460px; }
+  .device--collapsed { height: 440px; }
+  .shade__ghost .skel { background: var(--border-strong); }
+
+  @media (max-width: 1279px) {
+    .mock-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .desk-grid { grid-template-columns: minmax(0, 1fr); }
+    .vgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+
+  /* ---------------- Phone ---------------- */
+  @media (max-width: 820px) {
+    .mock-grid, .vgrid { grid-template-columns: minmax(0, 1fr); gap: var(--sp-8); }
+    .device { width: 100%; max-width: 320px; }
+    .page-head__actions { width: 100%; }
+    .page-head__actions .btn { flex: 1 1 auto; }
+    .desk { height: 460px; }
+    .pop--gnome { width: calc(100% - var(--sp-6)); }
+    .pop--gnome .cal { display: none; }
+    .desk--gnome { height: auto; padding-bottom: var(--sp-4); }
+    .desk--gnome .pop--gnome { position: relative; top: auto; left: auto; transform: none; margin: var(--sp-2) auto 0; }
+    .mpris .srow { flex-direction: column; gap: var(--sp-1); }
+    .mpris .srow__main { flex: none; }
+    .variants { padding: var(--sp-8) var(--gutter) var(--sp-12); gap: var(--sp-8); }
+    .variant__box { padding: var(--sp-4); }
+  }
+</style>
+</head>
+<body>
+<svg id="sprite" xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M4 4h3v16H4zM10 4h3v16h-3zM15.5 5.2l2.9-.8 4.1 14.7-2.9.8z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l11-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M19 6l-10 6 10 6zM5 6v12"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M5 6l10 6-10 6zM19 6v12"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.8 1-1a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M3 6h12M3 12h12M3 18h8M18 6v10"/><circle cx="16" cy="16.5" r="2.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="i-offline" viewBox="0 0 24 24"><path d="M22.6 16.6A5 5 0 0 0 18 9h-1.3A8 8 0 0 0 5 6.3M3 3l18 18M7 17h11M3.2 12.8A5 5 0 0 0 7 19"/></symbol>
+  <symbol id="i-playlist" viewBox="0 0 24 24"><path d="M3 6h13M3 12h13M3 18h7M19 9v9M16 13h6"/></symbol>
+  <symbol id="i-stream" viewBox="0 0 24 24"><path d="M2 12h2M6 8v8M10 5v14M14 8v8M18 10v4M22 12h0"/></symbol>
+  <symbol id="i-device" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 8.8a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0M12 19.5h.01"/></symbol>
+  <symbol id="i-signal" viewBox="0 0 24 24"><path d="M4 20v-3M9 20v-7M14 20V9M19 20V4"/></symbol>
+  <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2" y="7" width="18" height="10" rx="2"/><path d="M22 11v2M5 10h9v4H5z"/></symbol>
+  <symbol id="i-bt" viewBox="0 0 24 24"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></symbol>
+  <symbol id="i-torch" viewBox="0 0 24 24"><path d="M8 2h8v4l-2 4v12h-4V10L8 6zM8 6h8"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="4"/></symbol>
+  <symbol id="i-dnd" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+  <symbol id="i-speaker" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2"/><circle cx="12" cy="14" r="3"/><path d="M12 6h.01"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+  <!-- artwork motif reused as the media-card / wallpaper texture -->
+  <symbol id="art-rings" viewBox="0 0 300 300"><g stroke="currentColor" stroke-width="2"><circle cx="230" cy="70" r="40"/><circle cx="230" cy="70" r="80"/><circle cx="230" cy="70" r="120"/><circle cx="230" cy="70" r="160"/><circle cx="230" cy="70" r="200"/></g></symbol>
+  <symbol id="art-waves" viewBox="0 0 300 600"><g stroke="currentColor" stroke-width="2"><path d="M-20 360c60-40 120 40 180 0s120-40 160 0"/><path d="M-20 400c60-40 120 40 180 0s120-40 160 0"/><path d="M-20 440c60-40 120 40 180 0s120-40 160 0"/><path d="M-20 480c60-40 120 40 180 0s120-40 160 0"/><path d="M-20 520c60-40 120 40 180 0s120-40 160 0"/></g></symbol>
+</svg>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar__brand"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span>Offline Player</div>
+    <nav class="sidebar__section" aria-label="Primary">
+      <a class="nav-item" href="home.html"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+      <a class="nav-item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+      <a class="nav-item" href="library.html"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+      <a class="nav-item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="nav-item__count">3</span></a>
+      <a class="nav-item" href="voice.html"><svg class="icon"><use href="#i-mic"/></svg>Voice recordings<span class="nav-item__count">18</span></a>
+    </nav>
+    <div class="sidebar__section">
+      <div class="eyebrow sidebar__label">Playlists</div>
+      <a class="nav-item nav-item--playlist" href="library.html"><svg class="icon icon--16"><use href="#i-heart"/></svg>Liked songs</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Late drives</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Focus — no vocals</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html"><svg class="icon icon--16"><use href="#i-playlist"/></svg>Gym 2026</a>
+      <a class="nav-item nav-item--playlist" href="playlist.html#create"><svg class="icon icon--16"><use href="#i-plus"/></svg>New playlist</a>
+    </div>
+    <div class="sidebar__section sidebar__foot">
+      <a class="nav-item" href="settings.html"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <a class="btn btn--icon topbar__back" href="now-playing.html" aria-label="Back to Now Playing"><svg class="icon"><use href="#i-chevron-left"/></svg></a>
+      <div class="topbar__title phone-only">Background playback</div>
+      <div class="search desktop-only"><svg class="icon"><use href="#i-search"/></svg><input class="search__input" placeholder="Search YouTube Music and your library" aria-label="Search"><span class="search__kbd">Ctrl K</span></div>
+      <a class="btn btn--ghost btn--sm desktop-only dl-status" href="downloads.html" aria-label="3 downloading, 62 percent, 1 minute 40 seconds left"><svg class="icon icon--16"><use href="#i-download"/></svg><span><span class="strong">3 downloading</span> · 62% · 1:40 left</span><i class="dl-status__bar" style="--p:62%"></i></a>
+    </header>
+
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <nav class="crumb desktop-only" aria-label="Breadcrumb"><a href="now-playing.html">Now playing</a><svg class="icon" aria-hidden="true"><use href="#i-chevron-right"/></svg><span>Background playback</span></nav>
+          <h1 class="desktop-only">Background playback</h1>
+          <p class="page-head__sub">The song keeps playing when the app is closed or the screen is locked. These are the system surfaces that control it — same song, same state, everywhere.</p>
+          <div class="meta" style="margin-top:var(--sp-2)"><span class="badge badge--ok"><svg class="icon"><use href="#i-check"/></svg>Downloaded</span><span>Heat Waves · Glass Animals</span><span class="sep"></span><span class="num">1:24 / 3:58</span><span class="sep"></span><span>Liked</span></div>
+        </div>
+        <div class="page-head__actions">
+          <a class="btn btn--primary" href="now-playing.html"><svg class="icon icon--16"><use href="#i-play"/></svg>Open Now Playing</a>
+        </div>
+      </div>
+
+      <!-- ===================== ANDROID ===================== -->
+      <section aria-labelledby="and-h" class="stack stack--6">
+        <div class="section-head"><h3 id="and-h">Android · media notification &amp; lock screen</h3></div>
+        <div class="mock-grid">
+
+          <!-- 1. Collapsed -->
+          <div class="mock">
+            <div class="device device--collapsed" role="img" aria-label="Android notification shade pulled down once: compact media card with previous, pause and next, plus the downloads notification">
+              <div class="shade shade--part">
+                <div class="sbar"><span>21:42</span><span class="sbar__icons"><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-battery"/></svg><span>78%</span></span></div>
+                <div class="qqs"><i class="on"><svg class="icon"><use href="#i-wifi"/></svg></i><i class="on"><svg class="icon"><use href="#i-bt"/></svg></i><i><svg class="icon"><use href="#i-dnd"/></svg></i><i><svg class="icon"><use href="#i-torch"/></svg></i><i><svg class="icon"><use href="#i-rotate"/></svg></i></div>
+                <div class="mc mc--compact pinned">
+                  <span class="pin pin--abs">1</span>
+                  <svg class="mc__bg" preserveAspectRatio="xMaxYMid slice"><use href="#art-rings"/></svg>
+                  <span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span>
+                  <div class="mc__meta"><div class="mc__title">Heat Waves</div><div class="mc__sub"><svg class="icon mc__src" role="img" aria-label="Downloaded"><use href="#i-check"/></svg>Glass Animals</div></div>
+                  <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                  <button class="mc__play" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+                  <button class="mc__btn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                </div>
+                <div class="an pinned">
+                  <span class="pin pin--abs">2</span>
+                  <div class="an__head"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span><span>Offline Player · Downloads · now</span></div>
+                  <div class="an__title">Downloading 3 songs</div>
+                  <div class="an__text">62% · 2.4 MB/s · 1:40 left · 9 queued</div>
+                  <div class="progress progress--thin" style="--p:62%"><i></i></div>
+                </div>
+                <div class="handle"></div>
+              </div>
+              <div class="shade__under"><div class="shade__ghost" aria-hidden="true"><div class="cluster"><div class="art art--2"><span>BL</span></div><div class="stack stack--2" style="flex:1"><span class="skel skel--text w-80"></span><span class="skel skel--text w-40"></span></div></div><div class="cluster"><div class="art art--3"><span>HO</span></div><div class="stack stack--2" style="flex:1"><span class="skel skel--text w-100"></span><span class="skel skel--text w-40"></span></div></div><div class="cluster"><div class="art art--4"><span>RI</span></div><div class="stack stack--2" style="flex:1"><span class="skel skel--text w-80"></span><span class="skel skel--text w-40"></span></div></div></div></div>
+            </div>
+            <div class="mock__cap">
+              <h4>Collapsed — first pull of the shade</h4>
+              <p>Compact media card at the top of the shade.</p>
+            </div>
+            <ol class="notes">
+              <li><span class="pin">1</span><span><b>Compact actions are Previous · Pause · Next</b> — the three the system allows in compact view. Like moves to the expanded card. Tapping the card opens Now Playing.</span></li>
+              <li><span class="pin">2</span><span><b>Downloads are a separate, silent notification</b> with numbers (percent, speed, ETA, queued). It never replaces the media card.</span></li>
+            </ol>
+          </div>
+
+          <!-- 2. Expanded -->
+          <div class="mock">
+            <div class="device" role="img" aria-label="Android notification shade fully expanded: media card with artwork, pause, scrubber at 1:24 of 3:58, previous, next and a filled like heart">
+              <div class="shade" style="flex:1">
+                <div class="sbar"><span>21:42</span><span class="sbar__icons"><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-battery"/></svg><span>78%</span></span></div>
+                <div class="shade__head"><span class="shade__clock">21:42</span><span class="shade__date">Mon, 19 Oct</span></div>
+                <div class="qs"><i class="on"><svg class="icon"><use href="#i-wifi"/></svg>Home-5G</i><i class="on"><svg class="icon"><use href="#i-bt"/></svg>Buds Pro</i><i><svg class="icon"><use href="#i-dnd"/></svg>Do not disturb</i><i><svg class="icon"><use href="#i-torch"/></svg>Flashlight</i></div>
+                <div class="mc pinned">
+                  <svg class="mc__bg" preserveAspectRatio="xMaxYMin slice"><use href="#art-rings"/></svg>
+                  <span class="pin pin--abs pin--app">3</span>
+                  <div class="mc__top"><span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span><span class="mc__out"><svg class="icon"><use href="#i-bt"/></svg>Buds Pro</span></div>
+                  <div class="mc__mid">
+                    <div class="mc__meta"><div class="mc__title">Heat Waves</div><div class="mc__sub"><svg class="icon mc__src" role="img" aria-label="Downloaded"><use href="#i-check"/></svg>Glass Animals</div></div>
+                    <button class="mc__play pinned" aria-label="Pause"><span class="pin pin--abs pin--r">4</span><svg class="icon"><use href="#i-pause"/></svg></button>
+                  </div>
+                  <div class="mc__bottom">
+                    <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                    <div class="mc__seek pinned" style="--p:36%;--b:100%"><span class="pin pin--abs">5</span><div class="mc__track"><i class="mc__buf"></i><i class="mc__fill"></i><i class="mc__thumb"></i></div><div class="mc__times"><span>1:24</span><span>3:58</span></div></div>
+                    <button class="mc__btn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                    <button class="mc__btn is-liked pinned" aria-label="Liked — tap to unlike" aria-pressed="true"><span class="pin pin--abs pin--r">6</span><svg class="icon"><use href="#i-heart"/></svg></button>
+                  </div>
+                </div>
+                <div class="an">
+                  <div class="an__head"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span><span>Offline Player · Downloads · now</span></div>
+                  <div class="an__title">Downloading 3 songs</div>
+                  <div class="an__text">62% · 2.4 MB/s · 1:40 left · 9 queued</div>
+                  <div class="progress progress--thin" style="--p:62%"><i></i></div>
+                  <div class="an__acts"><span>Pause all</span><span>Open downloads</span></div>
+                </div>
+                <div class="shade__foot"><span>Manage</span><span>Clear all</span></div>
+              </div>
+            </div>
+            <div class="mock__cap">
+              <h4>Expanded — with like</h4>
+              <p>Full media card: artwork behind a scrim, scrubber, four actions.</p>
+            </div>
+            <ol class="notes">
+              <li><span class="pin">3</span><span><b>App icon is the Offline Player mark</b> (red play on white). Output chip is the system's own — it shows the current Bluetooth device.</span></li>
+              <li><span class="pin">4</span><span><b>Pause/Play is the one large target</b> (52 px rounded square).</span></li>
+              <li><span class="pin">5</span><span><b>Scrubber</b> drags to seek; elapsed and total time below. A downloaded song is fully buffered, so there is no lighter buffer bar. Line two starts with a small check = Downloaded (a wave = Streaming), the same cue as the in-app player.</span></li>
+              <li><span class="pin">6</span><span><b>Like</b> is a custom action: filled heart = in Liked songs. Tapping it updates Liked songs and the player heart at once.</span></li>
+            </ol>
+          </div>
+
+          <!-- 3. Lock screen -->
+          <div class="mock">
+            <div class="device" role="img" aria-label="Android lock screen at 21:42 with the media card: Heat Waves by Glass Animals, scrubber at 1:24 of 3:58, previous, pause, next and like">
+              <div class="lock">
+                <svg class="lock__wall" preserveAspectRatio="xMidYMax slice"><use href="#art-waves"/></svg>
+                <div class="sbar"><span>Home-5G</span><span class="sbar__icons"><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-battery"/></svg><span>78%</span></span></div>
+                <div class="lock__clock">21:42</div>
+                <div class="lock__date">Monday, 19 October</div>
+                <div class="lock__body">
+                  <div class="mc pinned">
+                    <span class="pin pin--abs">7</span>
+                    <svg class="mc__bg" preserveAspectRatio="xMaxYMin slice"><use href="#art-rings"/></svg>
+                    <div class="mc__top"><span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span><span class="mc__out"><svg class="icon"><use href="#i-bt"/></svg>Buds Pro</span></div>
+                    <div class="mc__mid">
+                      <div class="mc__meta"><div class="mc__title">Heat Waves</div><div class="mc__sub"><svg class="icon mc__src" role="img" aria-label="Downloaded"><use href="#i-check"/></svg>Glass Animals</div></div>
+                      <button class="mc__play" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+                    </div>
+                    <div class="mc__bottom">
+                      <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                      <div class="mc__seek pinned" style="--p:36%;--b:100%"><span class="pin pin--abs">8</span><div class="mc__track"><i class="mc__buf"></i><i class="mc__fill"></i><i class="mc__thumb"></i></div><div class="mc__times"><span>1:24</span><span>3:58</span></div></div>
+                      <button class="mc__btn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                      <button class="mc__btn is-liked" aria-label="Liked — tap to unlike" aria-pressed="true"><svg class="icon"><use href="#i-heart"/></svg></button>
+                    </div>
+                  </div>
+                </div>
+                <div class="lock__foot">
+                  <span class="lock__fab"><svg class="icon"><use href="#i-torch"/></svg></span>
+                  <span class="lock__hint pinned"><span class="pin pin--abs" style="left:calc(var(--sp-6) * -1)">9</span><svg class="icon"><use href="#i-lock"/></svg>Swipe up to open</span>
+                  <span class="lock__fab"><svg class="icon"><use href="#i-camera"/></svg></span>
+                </div>
+              </div>
+            </div>
+            <div class="mock__cap">
+              <h4>Lock screen — with scrubber</h4>
+              <p>Same card, same actions, on the locked phone.</p>
+            </div>
+            <ol class="notes">
+              <li><span class="pin">7</span><span><b>Identical card to the shade</b>, so there is one thing to learn. Like, pause, skip work without unlocking.</span></li>
+              <li><span class="pin">8</span><span><b>Scrubber is live on the lock screen</b> — drag to seek; times stay visible.</span></li>
+              <li><span class="pin">9</span><span><b>Opening the app needs an unlock</b>; tapping the card asks for it, then lands on Now Playing. The wallpaper is never replaced by artwork.</span></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== DESKTOP ===================== -->
+      <section aria-labelledby="desk-h" class="stack stack--6">
+        <div class="section-head"><h3 id="desk-h">Linux desktop · system media controls (MPRIS)</h3></div>
+        <div class="desk-grid">
+          <div class="mock">
+            <div class="desk desk--gnome" role="img" aria-label="GNOME top bar with the date menu open: Offline Player media card with Heat Waves, previous, pause and next">
+              <svg class="desk__wall" preserveAspectRatio="xMidYMax slice"><use href="#art-waves"/></svg>
+              <div class="desk__bar"><span>Activities</span><span class="desk__clock">Mon 19 Oct 21:42</span><span class="sbar__icons"><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-volume"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+              <div class="pop pop--gnome">
+                <div class="gm pinned">
+                  <span class="pin pin--abs">A</span>
+                  <div class="gm__head"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span>Offline Player</div>
+                  <div class="gm__body">
+                    <div class="art art--1"><span>HW</span></div>
+                    <div class="gm__meta"><div class="gm__title">Heat Waves</div><div class="gm__sub">Glass Animals</div></div>
+                    <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                    <button class="btn btn--icon is-fill" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+                    <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                  </div>
+                </div>
+                <div class="between t-13"><span class="strong">October 2026</span><span class="faint">Mon 19</span></div>
+                <div class="cal" aria-hidden="true">
+                  <span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span>
+                  <span>28</span><span>29</span><span>30</span><span>1</span><span>2</span><span>3</span><span>4</span>
+                  <span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span><span>11</span>
+                  <span>12</span><span>13</span><span>14</span><span>15</span><span>16</span><span>17</span><span>18</span>
+                  <span class="is-today">19</span><span>20</span><span>21</span><span>22</span><span>23</span><span>24</span><span>25</span>
+                </div>
+              </div>
+            </div>
+            <div class="mock__cap"><h4>GNOME — date menu media card</h4><p>Appears whenever the app is playing or paused; artwork comes from the song's cover.</p></div>
+          </div>
+
+          <div class="mock">
+            <div class="desk" role="img" aria-label="KDE Plasma panel with the Media Player popup: large artwork, Heat Waves, scrubber at 1:24 of 3:58, shuffle, previous, pause, next and repeat">
+              <svg class="desk__wall" preserveAspectRatio="xMidYMin slice"><use href="#art-rings"/></svg>
+              <div class="pop pop--kde pinned">
+                <span class="pin pin--abs">B</span>
+                <div class="kp">
+                  <div class="kp__head"><div class="art art--1"><span>HW</span></div><div class="gm__meta"><div class="gm__title">Heat Waves</div><div class="gm__sub">Glass Animals</div><div class="gm__sub">Dreamland</div></div></div>
+                  <div class="scrubber" style="--p:36%;--b:100%"><div class="scrubber__track"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div><div class="scrubber__times"><span>1:24</span><span>-2:34</span></div></div>
+                  <div class="transport">
+                    <button class="btn btn--icon" aria-label="Shuffle off"><svg class="icon icon--16"><use href="#i-shuffle"/></svg></button>
+                    <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                    <button class="btn btn--play" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+                    <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                    <button class="btn btn--icon" aria-label="Repeat off"><svg class="icon icon--16"><use href="#i-repeat"/></svg></button>
+                  </div>
+                </div>
+              </div>
+              <div class="desk__bar desk__bar--bottom">
+                <span class="desk__task"><i><svg class="icon"><use href="#i-grid"/></svg></i><i><svg class="icon"><use href="#i-folder"/></svg></i><i class="is-open"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span></i></span>
+                <span class="sbar__icons"><svg class="icon"><use href="#i-play"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-volume"/></svg><span>21:42</span></span>
+              </div>
+            </div>
+            <div class="mock__cap"><h4>KDE Plasma — Media Player popup</h4><p>Has a scrubber; seeking calls MPRIS SetPosition. Shuffle and repeat mirror the app.</p></div>
+          </div>
+        </div>
+
+        <div class="card card--pad-lg mpris">
+          <div class="card__head"><div><div class="card__title">What the app publishes over MPRIS</div><div class="card__sub">One D-Bus player, <span class="kbd">org.mpris.MediaPlayer2.offlineplayer</span>; media keys (Play/Pause, Next, Previous) work through it.</div></div></div>
+          <div class="srow"><div class="srow__main"><div class="srow__title">Identity</div></div><div class="srow__value">Offline Player · DesktopEntry offline-player</div></div>
+          <div class="srow"><div class="srow__main"><div class="srow__title">Song</div><div class="srow__sub">Title, artist, album</div></div><div class="srow__value">xesam:title · xesam:artist · xesam:album</div></div>
+          <div class="srow"><div class="srow__main"><div class="srow__title">Artwork</div><div class="srow__sub">Generated art if none</div></div><div class="srow__value">mpris:artUrl → file:// cached cover</div></div>
+          <div class="srow"><div class="srow__main"><div class="srow__title">Position &amp; seek</div><div class="srow__sub">While a stream buffers, a seek waits</div></div><div class="srow__value">mpris:length · Position · CanSeek=true</div></div>
+          <div class="srow"><div class="srow__main"><div class="srow__title">Controls</div></div><div class="srow__value">CanGoPrevious · CanGoNext · PlayPause · Shuffle · LoopStatus</div></div>
+          <div class="srow"><div class="srow__main"><div class="srow__title">Like</div><div class="srow__sub">Not part of MPRIS</div></div><div class="srow__value">Stays in the app: player-bar heart and Now Playing</div></div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <footer class="player-bar">
+    <div class="player-bar__now">
+      <div class="art art--1"><span>HW</span></div>
+      <div class="player-bar__meta"><div class="player-bar__title truncate">Heat Waves</div><div class="player-bar__sub"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · Dreamland</span></div></div>
+      <button class="btn btn--icon btn--sm like is-liked" aria-label="Liked"><svg class="icon icon--16"><use href="#i-heart"/></svg></button>
+    </div>
+    <div class="player-bar__center">
+      <div class="transport">
+        <button class="btn btn--icon" aria-label="Shuffle off"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+        <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+        <button class="btn btn--play" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button>
+        <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+        <button class="btn btn--icon" aria-label="Repeat off"><svg class="icon"><use href="#i-repeat"/></svg></button>
+      </div>
+      <div class="scrubber scrubber--inline" style="--p:36%;--b:100%">
+        <div class="scrubber__times"><span>1:24</span></div>
+        <div class="scrubber__track"><i class="scrubber__buffer"></i><i class="scrubber__fill"></i><i class="scrubber__thumb"></i></div>
+        <div class="scrubber__times"><span>-2:34</span></div>
+      </div>
+    </div>
+    <div class="player-bar__right">
+      <button class="btn btn--icon" aria-label="Queue"><svg class="icon"><use href="#i-queue"/></svg></button>
+      <button class="btn btn--icon" aria-label="Sleep timer"><svg class="icon"><use href="#i-moon"/></svg></button>
+      <div class="volume" style="--p:70%"><svg class="icon muted"><use href="#i-volume"/></svg><div class="volume__track"><i class="volume__fill"></i><i class="volume__thumb"></i></div></div>
+    </div>
+  </footer>
+  <div class="mini-player"><div class="mini-player__progress" style="--p:36%"><i></i></div><div class="art art--1"><span>HW</span></div><div class="mini-player__meta"><div class="mini-player__title truncate">Heat Waves</div><div class="mini-player__sub num"><svg class="icon sg sg--dl" role="img" aria-label="Downloaded"><use href="#i-check"/></svg><span>Glass Animals · 1:24 / 3:58</span></div></div><button class="btn btn--icon" aria-label="Pause"><svg class="icon icon--fill"><use href="#i-pause"/></svg></button><button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button></div>
+  <nav class="tabbar" aria-label="Primary">
+    <a class="tabbar__item is-active" href="home.html" aria-current="page"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+    <a class="tabbar__item" href="search.html"><svg class="icon"><use href="#i-search"/></svg>Search</a>
+    <a class="tabbar__item" href="library.html"><svg class="icon"><use href="#i-library"/></svg>Library</a>
+    <a class="tabbar__item" href="downloads.html"><svg class="icon"><use href="#i-download"/></svg>Downloads<span class="tab-count" aria-label="3 active downloads">3</span></a>
+  </nav>
+</div>
+
+<!-- =================================================================== STATE VARIANTS -->
+<div class="variants">
+  <div class="variants__intro">
+    <div class="eyebrow">State variants</div>
+    <h2 class="t-20">Notification &amp; lock screen — loading, offline, error, empty</h2>
+    <p>The system card has two text lines, so the app's state lives in the second line only when it matters. Downloaded songs show the artist; everything else says what is happening.</p>
+  </div>
+
+  <!-- LOADING -->
+  <section class="variant" data-state="loading" aria-label="Loading state — streaming song buffering">
+    <div class="variant__label"><h3 class="t-16">Loading — streaming song buffering</h3><p>A YouTube Music song streams in chunks. The lighter bar is what is buffered; the play button shows a spinner until audio starts; the second line counts down the buffer.</p></div>
+    <div class="variant__box">
+      <div class="vgrid">
+        <div class="vcell">
+          <div class="shade">
+            <div class="mc art--2">
+              <svg class="mc__bg" preserveAspectRatio="xMaxYMin slice"><use href="#art-rings"/></svg>
+              <div class="mc__top"><span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span><span class="mc__out"><svg class="icon"><use href="#i-speaker"/></svg>This phone</span></div>
+              <div class="mc__mid">
+                <div class="mc__meta"><div class="mc__title">Blinding Lights</div><div class="mc__sub"><svg class="icon icon--16"><use href="#i-stream"/></svg>Buffering · 42%</div></div>
+                <button class="mc__play" aria-label="Loading, tap to pause"><span class="spinner" aria-hidden="true"></span></button>
+              </div>
+              <div class="mc__bottom">
+                <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                <div class="mc__seek" style="--p:0%;--b:18%"><div class="mc__track"><i class="mc__buf"></i><i class="mc__fill"></i><i class="mc__thumb"></i></div><div class="mc__times"><span>0:00</span><span>3:20</span></div></div>
+                <button class="mc__btn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                <button class="mc__btn" aria-label="Like"><svg class="icon"><use href="#i-heart"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>Android, start of a stream.</b> Seeking past the buffered part is allowed; it waits and the line reads “Buffering · n%”.</p>
+        </div>
+        <div class="vcell">
+          <div class="shade">
+            <div class="mc art--2">
+              <svg class="mc__bg" preserveAspectRatio="xMaxYMin slice"><use href="#art-rings"/></svg>
+              <div class="mc__top"><span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span><span class="mc__out"><svg class="icon"><use href="#i-speaker"/></svg>This phone</span></div>
+              <div class="mc__mid">
+                <div class="mc__meta"><div class="mc__title">Blinding Lights</div><div class="mc__sub"><svg class="icon mc__src" role="img" aria-label="Streaming"><use href="#i-stream"/></svg>The Weeknd</div></div>
+                <button class="mc__play" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+              </div>
+              <div class="mc__bottom">
+                <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                <div class="mc__seek" style="--p:31%;--b:64%"><div class="mc__track"><i class="mc__buf"></i><i class="mc__fill"></i><i class="mc__thumb"></i></div><div class="mc__times"><span>1:02</span><span>3:20</span></div></div>
+                <button class="mc__btn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                <button class="mc__btn" aria-label="Like"><svg class="icon"><use href="#i-heart"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>Android, streaming normally.</b> Artist returns to line two; the buffer bar (64%) stays visible ahead of the playhead.</p>
+        </div>
+        <div class="vcell">
+          <div class="gm" style="background:var(--surface);border:1px solid var(--border)">
+            <div class="gm__head"><span class="brand-mark"><svg class="icon icon--fill"><use href="#i-play"/></svg></span>Offline Player</div>
+            <div class="gm__body">
+              <div class="art art--2"><span>BL</span></div>
+              <div class="gm__meta"><div class="gm__title">Blinding Lights</div><div class="gm__sub">Buffering · 42%</div></div>
+              <button class="btn btn--icon" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+              <button class="btn btn--icon" aria-label="Loading"><span class="spinner" aria-hidden="true"></span></button>
+              <button class="btn btn--icon" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>GNOME card while buffering.</b> MPRIS PlaybackStatus stays “Playing”; xesam:artist carries the buffer line until audio starts.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- OFFLINE -->
+  <section class="variant" data-state="offline" aria-label="Offline state">
+    <div class="variant__label"><h3 class="t-16">Offline — connection lost mid-stream</h3><p>A streamed song plays to the end of what is buffered, then pauses. Next skips to the next downloaded song in the queue. Downloaded songs never change.</p></div>
+    <div class="variant__box">
+      <div class="vgrid">
+        <div class="vcell">
+          <div class="shade">
+            <div class="mc art--2">
+              <svg class="mc__bg" preserveAspectRatio="xMaxYMin slice"><use href="#art-rings"/></svg>
+              <div class="mc__top"><span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span><span class="mc__out"><svg class="icon"><use href="#i-speaker"/></svg>This phone</span></div>
+              <div class="mc__mid">
+                <div class="mc__meta"><div class="mc__title">Blinding Lights</div><div class="mc__sub"><svg class="icon icon--16"><use href="#i-offline"/></svg>No connection · paused</div></div>
+                <button class="mc__play" aria-label="Play when back online"><svg class="icon"><use href="#i-play"/></svg></button>
+              </div>
+              <div class="mc__bottom">
+                <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                <div class="mc__seek" style="--p:64%;--b:64%"><div class="mc__track"><i class="mc__buf"></i><i class="mc__fill"></i><i class="mc__thumb"></i></div><div class="mc__times"><span>2:08</span><span>3:20</span></div></div>
+                <button class="mc__btn" aria-label="Next downloaded song"><svg class="icon"><use href="#i-next"/></svg></button>
+                <button class="mc__btn" aria-label="Like"><svg class="icon"><use href="#i-heart"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>Stopped at the buffer edge (2:08).</b> Play resumes when the connection returns; Next jumps to “Heat Waves” (downloaded).</p>
+        </div>
+        <div class="vcell">
+          <div class="shade">
+            <div class="mc">
+              <svg class="mc__bg" preserveAspectRatio="xMaxYMin slice"><use href="#art-rings"/></svg>
+              <div class="mc__top"><span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span><span class="mc__out"><svg class="icon"><use href="#i-speaker"/></svg>This phone</span></div>
+              <div class="mc__mid">
+                <div class="mc__meta"><div class="mc__title">Heat Waves</div><div class="mc__sub"><svg class="icon mc__src" role="img" aria-label="Downloaded"><use href="#i-check"/></svg>Glass Animals</div></div>
+                <button class="mc__play" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+              </div>
+              <div class="mc__bottom">
+                <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                <div class="mc__seek" style="--p:8%;--b:100%"><div class="mc__track"><i class="mc__buf"></i><i class="mc__fill"></i><i class="mc__thumb"></i></div><div class="mc__times"><span>0:19</span><span>3:58</span></div></div>
+                <button class="mc__btn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                <button class="mc__btn is-liked" aria-label="Liked — tap to unlike" aria-pressed="true"><svg class="icon"><use href="#i-heart"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>After Next, offline.</b> A downloaded song: nothing about the card changes. Streamed songs left in the queue are skipped until online.</p>
+        </div>
+        <div class="vcell">
+          <div class="banner banner--warn">
+            <svg class="icon"><use href="#i-offline"/></svg>
+            <div class="banner__body"><div class="banner__title">You're offline</div><div class="banner__text">2 streamed songs in the queue will be skipped. 14 downloaded songs keep playing.</div></div>
+            <a class="btn btn--secondary btn--sm" href="downloads.html">Downloads</a>
+          </div>
+          <p class="vcell__cap"><b>Inside the app</b> the same reason appears once as a banner on Now Playing, with the way out.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ERROR -->
+  <section class="variant" data-state="error" aria-label="Error state">
+    <div class="variant__label"><h3 class="t-16">Error — a song can't be played</h3><p>A downloaded file was deleted outside the app, or YouTube Music refused the stream. The card says why in line two, then moves on after 3 s so the music doesn't stop.</p></div>
+    <div class="variant__box">
+      <div class="vgrid">
+        <div class="vcell">
+          <div class="shade">
+            <div class="mc art--5">
+              <svg class="mc__bg" preserveAspectRatio="xMaxYMin slice"><use href="#art-rings"/></svg>
+              <div class="mc__top"><span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span><span class="mc__out"><svg class="icon"><use href="#i-speaker"/></svg>This phone</span></div>
+              <div class="mc__mid">
+                <div class="mc__meta"><div class="mc__title">Lovers Rock</div><div class="mc__sub"><svg class="icon icon--16"><use href="#i-alert"/></svg>File missing · next in 3 s</div></div>
+                <button class="mc__play" aria-label="Play"><svg class="icon"><use href="#i-play"/></svg></button>
+              </div>
+              <div class="mc__bottom">
+                <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                <div class="mc__seek" style="--p:0%;--b:0%"><div class="mc__track"><i class="mc__buf"></i><i class="mc__fill"></i></div><div class="mc__times"><span>0:00</span><span>3:33</span></div></div>
+                <button class="mc__btn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                <button class="mc__btn" aria-label="Like"><svg class="icon"><use href="#i-heart"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>Downloaded file gone.</b> Skips after 3 s; the song is marked in Downloads with “Download again”.</p>
+        </div>
+        <div class="vcell">
+          <div class="shade">
+            <div class="mc art--3">
+              <svg class="mc__bg" preserveAspectRatio="xMaxYMin slice"><use href="#art-rings"/></svg>
+              <div class="mc__top"><span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span><span class="mc__out"><svg class="icon"><use href="#i-speaker"/></svg>This phone</span></div>
+              <div class="mc__mid">
+                <div class="mc__meta"><div class="mc__title">Holocene</div><div class="mc__sub"><svg class="icon icon--16"><use href="#i-alert"/></svg>Stream unavailable · next in 3 s</div></div>
+                <button class="mc__play" aria-label="Retry"><svg class="icon"><use href="#i-play"/></svg></button>
+              </div>
+              <div class="mc__bottom">
+                <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+                <div class="mc__seek" style="--p:0%;--b:0%"><div class="mc__track"><i class="mc__buf"></i><i class="mc__fill"></i></div><div class="mc__times"><span>0:00</span><span>5:36</span></div></div>
+                <button class="mc__btn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+                <button class="mc__btn" aria-label="Like"><svg class="icon"><use href="#i-heart"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>Stream refused.</b> Play retries once; if yt-dlp is out of date, the in-app toast offers Settings → Update.</p>
+        </div>
+        <div class="vcell">
+          <div class="toast toast--danger" role="status" style="position:static;width:100%">
+            <svg class="icon"><use href="#i-alert"/></svg>
+            <div class="toast__text">Couldn't stream “Holocene”<div class="toast__sub">yt-dlp 2026.08.02 is out of date</div></div>
+            <a class="btn btn--sm" href="settings.html">Update</a>
+          </div>
+          <p class="vcell__cap"><b>Inside the app</b> the fix is one tap away; the notification only reports and moves on.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- EMPTY -->
+  <section class="variant" data-state="empty" aria-label="Empty state — nothing playing">
+    <div class="variant__label"><h3 class="t-16">Empty — queue finished, then nothing playing</h3><p>When the queue ends the card stays, paused on the last song, so Play restarts it. Swiping it away (or 30 minutes paused) removes it; with nothing playing there is no card and no MPRIS player.</p></div>
+    <div class="variant__box">
+      <div class="vgrid">
+        <div class="vcell">
+          <div class="shade">
+            <div class="mc mc--compact art--3">
+              <svg class="mc__bg" preserveAspectRatio="xMaxYMid slice"><use href="#art-rings"/></svg>
+              <span class="mc__app"><svg class="icon"><use href="#i-play"/></svg></span>
+              <div class="mc__meta"><div class="mc__title">Holocene</div><div class="mc__sub">Queue finished</div></div>
+              <button class="mc__btn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+              <button class="mc__play" aria-label="Play again"><svg class="icon"><use href="#i-play"/></svg></button>
+              <button class="mc__btn" aria-label="Next" disabled><svg class="icon"><use href="#i-next"/></svg></button>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>Queue finished.</b> Paused on the last song; Next is disabled; the card can be swiped away.</p>
+        </div>
+        <div class="vcell">
+          <div class="device device--short" role="img" aria-label="Android lock screen with no media card">
+            <div class="lock">
+              <svg class="lock__wall" preserveAspectRatio="xMidYMax slice"><use href="#art-waves"/></svg>
+              <div class="sbar"><span>Home-5G</span><span class="sbar__icons"><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg><span>78%</span></span></div>
+              <div class="lock__clock">22:15</div>
+              <div class="lock__date">Monday, 19 October</div>
+              <div class="lock__body"></div>
+              <div class="lock__foot"><span class="lock__fab"><svg class="icon"><use href="#i-torch"/></svg></span><span class="lock__hint"><svg class="icon"><use href="#i-lock"/></svg>Swipe up to open</span><span class="lock__fab"><svg class="icon"><use href="#i-camera"/></svg></span></div>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>Nothing playing.</b> The lock screen is the user's own — no card, no leftover artwork.</p>
+        </div>
+        <div class="vcell">
+          <div class="card">
+            <div class="empty empty--compact">
+              <div class="empty__icon"><svg class="icon"><use href="#i-monitor"/></svg></div>
+              <div class="empty__title">No media controls yet</div>
+              <p class="empty__text">Play a song and Offline Player appears in your desktop's media controls and responds to media keys.</p>
+              <div class="empty__actions"><a class="btn btn--primary btn--sm" href="library.html"><svg class="icon icon--16"><use href="#i-play"/></svg>Play Liked songs</a></div>
+            </div>
+          </div>
+          <p class="vcell__cap"><b>Desktop, before the first song.</b> Shown here as the in-app hint; the system menus simply have no player.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+</body>
+</html>

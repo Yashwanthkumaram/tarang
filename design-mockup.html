@@ -1,0 +1,971 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Offline Player</title>
+<meta name="description" content="UI design mockup for an offline-first music player: local library, self-hosted server search, voice-recording separation, folder rules, imports and torrent downloads.">
+<style>
+  :root {
+    --bg: #0e0f12;
+    --bg-elev: #16181d;
+    --bg-elev-2: #1e2128;
+    --bg-hover: #262a33;
+    --border: #2a2e37;
+    --text: #f2f3f5;
+    --text-2: #a9adb7;
+    --text-3: #6f7480;
+    --accent: #5ee39a;
+    --accent-ink: #062b18;
+    --accent-dim: rgba(94, 227, 154, .14);
+    --amber: #f5c542;
+    --amber-dim: rgba(245, 197, 66, .16);
+    --rose: #ff6b81;
+    --rose-dim: rgba(255, 107, 129, .14);
+    --sky: #6fb7ff;
+    --sky-dim: rgba(111, 183, 255, .14);
+    --violet: #b48cff;
+    --violet-dim: rgba(180, 140, 255, .16);
+    --radius: 12px;
+    --radius-sm: 8px;
+    --sidebar-w: 240px;
+    --player-h: 84px;
+    --bottomnav-h: 64px;
+    --font: -apple-system, "Segoe UI", Roboto, "Inter", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select { font: inherit; color: inherit; }
+  button { cursor: pointer; border: 0; background: none; padding: 0; }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3, h4 { margin: 0; font-weight: 700; letter-spacing: -.01em; }
+  h1 { font-size: 28px; }
+  h2 { font-size: 18px; }
+  h3 { font-size: 15px; }
+  p { margin: 0; }
+  .muted { color: var(--text-2); }
+  .faint { color: var(--text-3); }
+  .small { font-size: 12px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+
+  /* ---------- Layout ---------- */
+  .app {
+    display: grid;
+    grid-template-columns: var(--sidebar-w) 1fr;
+    grid-template-rows: 1fr;
+    height: 100%;
+    padding-bottom: var(--player-h);
+  }
+  .sidebar {
+    background: var(--bg-elev);
+    border-right: 1px solid var(--border);
+    padding: 18px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    overflow-y: auto;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 8px 16px;
+    font-weight: 800; font-size: 16px; letter-spacing: -.02em;
+  }
+  .brand .logo {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, var(--accent), #2fb97a);
+    display: grid; place-items: center; color: var(--accent-ink);
+  }
+  .nav-label { padding: 14px 10px 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); }
+  .nav-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 10px; border-radius: var(--radius-sm);
+    color: var(--text-2); font-weight: 500; width: 100%; text-align: left;
+  }
+  .nav-item:hover { background: var(--bg-hover); color: var(--text); }
+  .nav-item.active { background: var(--bg-elev-2); color: var(--text); }
+  .nav-item svg { width: 20px; height: 20px; flex: none; }
+  .nav-item .count { margin-left: auto; font-size: 11px; color: var(--text-3); background: var(--bg); padding: 2px 7px; border-radius: 999px; }
+  .sidebar .server-pill {
+    margin-top: auto;
+    padding: 12px; border-radius: var(--radius);
+    background: var(--bg-elev-2); border: 1px solid var(--border);
+  }
+
+  .main { overflow-y: auto; overflow-x: hidden; }
+  .view { display: none; padding: 26px 28px 40px; max-width: 1240px; }
+  .view.active { display: block; }
+  .view-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .view-head .sub { margin-top: 4px; color: var(--text-2); }
+  .section { margin-top: 28px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 12px; }
+
+  /* ---------- Components ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 14px; border-radius: 999px;
+    background: var(--bg-elev-2); border: 1px solid var(--border);
+    font-weight: 600; font-size: 13px; white-space: nowrap;
+  }
+  .btn:hover { background: var(--bg-hover); }
+  .btn svg { width: 16px; height: 16px; }
+  .btn-primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .btn-primary:hover { background: #79ebab; }
+  .btn-ghost { background: transparent; border-color: transparent; color: var(--text-2); }
+  .btn-ghost:hover { color: var(--text); background: var(--bg-hover); }
+  .btn-sm { padding: 6px 11px; font-size: 12px; }
+  .btn-icon { width: 34px; height: 34px; padding: 0; justify-content: center; border-radius: 50%; }
+  .btn-danger { color: var(--rose); border-color: rgba(255,107,129,.3); }
+
+  .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    background: var(--bg-elev-2); border: 1px solid var(--border); color: var(--text-2);
+  }
+  .chip.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; letter-spacing: .01em;
+    background: var(--bg-elev-2); color: var(--text-2);
+  }
+  .badge svg { width: 11px; height: 11px; }
+  .badge.local { background: var(--accent-dim); color: var(--accent); }
+  .badge.server { background: var(--sky-dim); color: var(--sky); }
+  .badge.spotify { background: var(--accent-dim); color: var(--accent); }
+  .badge.youtube { background: var(--rose-dim); color: var(--rose); }
+  .badge.torrent { background: var(--violet-dim); color: var(--violet); }
+  .badge.voice { background: var(--amber-dim); color: var(--amber); }
+  .badge.offline { background: var(--bg-elev-2); color: var(--text-3); }
+
+  .card {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px;
+  }
+  .card.pad-0 { padding: 0; overflow: hidden; }
+  .grid { display: grid; gap: 14px; }
+  .grid > * { min-width: 0; }
+  .grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .stat { display: flex; flex-direction: column; gap: 4px; }
+  .stat .num { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+  .stat .lbl { color: var(--text-2); font-size: 12px; }
+
+  .input-wrap {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg-elev-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 0 14px; height: 42px; flex: 1;
+  }
+  .input-wrap:focus-within { border-color: var(--text-3); }
+  .input-wrap svg { width: 18px; height: 18px; color: var(--text-3); flex: none; }
+  .input-wrap input { flex: 1; background: none; border: 0; outline: 0; min-width: 0; }
+  .input-wrap input::placeholder { color: var(--text-3); }
+  .input, .select {
+    width: 100%; height: 40px; padding: 0 12px;
+    background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    outline: 0;
+  }
+  .select { appearance: none; -webkit-appearance: none; padding-right: 32px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a9adb7' stroke-width='2'><path d='M6 9l6 6 6-6'/></svg>");
+    background-repeat: no-repeat; background-position: right 12px center; }
+
+  .progress { height: 6px; border-radius: 999px; background: var(--bg-elev-2); overflow: hidden; }
+  .progress > span { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+  .progress.violet > span { background: var(--violet); }
+  .progress.sky > span { background: var(--sky); }
+  .progress.amber > span { background: var(--amber); }
+
+  .toggle { position: relative; width: 40px; height: 22px; border-radius: 999px; background: var(--bg-hover); border: 1px solid var(--border); flex: none; transition: background .15s; }
+  .toggle::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-2); transition: transform .15s, background .15s; }
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+  .toggle.on::after { transform: translateX(18px); background: var(--accent-ink); }
+
+  .row { display: flex; align-items: center; gap: 12px; }
+  .row.between { justify-content: space-between; }
+  .row.wrap { flex-wrap: wrap; }
+  .gap-6 { gap: 6px; } .gap-8 { gap: 8px; } .gap-16 { gap: 16px; }
+  .mt-8 { margin-top: 8px; } .mt-12 { margin-top: 12px; } .mt-16 { margin-top: 16px; } .mt-20 { margin-top: 20px; }
+  .flex-1 { flex: 1; min-width: 0; }
+  .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Track list */
+  .track-list { display: flex; flex-direction: column; }
+  .track-head, .track {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 2.2fr) minmax(0, 1.2fr) 120px 70px 110px;
+    gap: 12px; align-items: center; padding: 8px 12px;
+  }
+  .track-head { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--text-3); border-bottom: 1px solid var(--border); }
+  .track { border-radius: var(--radius-sm); }
+  .track:hover { background: var(--bg-hover); }
+  .track .idx { color: var(--text-3); font-variant-numeric: tabular-nums; text-align: center; }
+  .track:hover .idx span { display: none; }
+  .track:hover .idx::before { content: "▶"; font-size: 10px; color: var(--text); }
+  .track.playing .idx span { display: none; }
+  .track.playing .idx::before { content: "♪"; color: var(--accent); }
+  .track .art { width: 38px; height: 38px; border-radius: 6px; flex: none; background: var(--bg-elev-2); display: grid; place-items: center; color: var(--text-3); }
+  .track .title { font-weight: 600; }
+  .track.playing .title { color: var(--accent); }
+  .track .actions { display: flex; gap: 4px; justify-content: flex-end; opacity: 0; }
+  .track:hover .actions { opacity: 1; }
+  .dur { color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+  /* Tiles */
+  .tile { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--radius); background: var(--bg-elev); border: 1px solid var(--border); transition: background .15s; }
+  .tile:hover { background: var(--bg-elev-2); }
+  .tile .cover { aspect-ratio: 1; border-radius: var(--radius-sm); display: grid; place-items: center; font-size: 28px; font-weight: 800; color: rgba(255,255,255,.75); }
+  .tile .t { font-weight: 600; }
+
+  /* Search results */
+  .result {
+    display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 14px; align-items: center;
+    padding: 12px; border-top: 1px solid var(--border);
+  }
+  .result:first-child { border-top: 0; }
+  .result .art { width: 44px; height: 44px; border-radius: 8px; background: var(--bg-elev-2); display: grid; place-items: center; color: var(--text-3); }
+  .result .meta { display: flex; gap: 10px; flex-wrap: wrap; color: var(--text-2); font-size: 12px; margin-top: 3px; }
+  .result .acts { display: flex; gap: 6px; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; }
+  .tab { padding: 10px 14px; color: var(--text-2); font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+  .tab.active { color: var(--text); border-color: var(--accent); }
+
+  /* Waveform */
+  .wave { display: flex; align-items: center; gap: 2px; height: 36px; }
+  .wave i { display: block; width: 3px; border-radius: 2px; background: var(--amber); opacity: .8; }
+
+  /* Folder rows */
+  .folder {
+    display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+    padding: 10px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-elev-2);
+  }
+  .folder .ic { width: 36px; height: 36px; border-radius: 8px; display: grid; place-items: center; }
+  .folder.include .ic { background: var(--amber-dim); color: var(--amber); }
+  .folder.exclude .ic { background: var(--rose-dim); color: var(--rose); }
+  .folder .path { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--text-2); }
+  .folder.app { border-color: rgba(245,197,66,.45); background: linear-gradient(0deg, var(--amber-dim), var(--amber-dim)), var(--bg-elev-2); }
+
+  .device { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+  .device.active { border-color: var(--accent); background: var(--accent-dim); }
+  .device .ic { width: 38px; height: 38px; border-radius: 9px; background: var(--bg-elev-2); display: grid; place-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); display: inline-block; }
+  .dot.on { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .dot.warn { background: var(--amber); }
+
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; font-size: 13px; }
+  .kv dt { color: var(--text-2); }
+  .kv dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+  .setting { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); }
+  .setting:first-child { border-top: 0; padding-top: 0; }
+  .setting .lbl { font-weight: 600; }
+  .setting .desc { color: var(--text-2); font-size: 12px; margin-top: 2px; }
+
+  .radio-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .radio-card { padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--bg-elev-2); text-align: left; }
+  .radio-card.active { border-color: var(--amber); background: var(--amber-dim); }
+  .radio-card .t { font-weight: 700; }
+  .radio-card .d { color: var(--text-2); font-size: 12px; margin-top: 4px; }
+
+  /* Player bar */
+  .player {
+    position: fixed; left: 0; right: 0; bottom: 0; height: var(--player-h);
+    background: var(--bg-elev); border-top: 1px solid var(--border);
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 1fr);
+    align-items: center; padding: 0 20px; gap: 16px; z-index: 20;
+  }
+  .player .now { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .player .now .art { width: 52px; height: 52px; border-radius: 8px; background: linear-gradient(135deg, #3a2f6b, #1e9a7c); flex: none; }
+  .player .controls { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .player .ctl-row { display: flex; align-items: center; gap: 18px; }
+  .player .ctl-row button { color: var(--text-2); display: grid; place-items: center; }
+  .player .ctl-row button:hover { color: var(--text); }
+  .player .ctl-row svg { width: 20px; height: 20px; }
+  .player .play { width: 36px; height: 36px; border-radius: 50%; background: var(--text); color: var(--bg) !important; }
+  .player .play svg { width: 18px; height: 18px; }
+  .player .seek { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 560px; }
+  .player .seek .progress { flex: 1; }
+  .player .seek .progress > span { background: var(--text); }
+  .player .seek:hover .progress > span { background: var(--accent); }
+  .player .right { display: flex; justify-content: flex-end; align-items: center; gap: 12px; }
+  .player .right svg { width: 18px; height: 18px; color: var(--text-2); }
+  .player .vol { width: 100px; }
+  .player .vol > span { background: var(--text-2); }
+
+  /* Bottom nav (mobile) */
+  .bottom-nav {
+    display: none; position: fixed; left: 0; right: 0; bottom: 0; height: var(--bottomnav-h);
+    background: var(--bg-elev); border-top: 1px solid var(--border); z-index: 30;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .bottom-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; color: var(--text-3); padding: 8px 0; }
+  .bottom-nav button.active { color: var(--text); }
+  .bottom-nav svg { width: 22px; height: 22px; }
+
+  .topbar { display: none; position: sticky; top: 0; z-index: 10; background: rgba(14,15,18,.9); backdrop-filter: blur(10px); padding: 12px 16px; border-bottom: 1px solid var(--border); align-items: center; gap: 10px; }
+
+  /* Toast / scan status */
+  .scan-banner { display: none; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--radius); background: var(--accent-dim); border: 1px solid rgba(94,227,154,.3); }
+  .scan-banner.show { display: flex; }
+  .spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(94,227,154,.3); border-top-color: var(--accent); animation: spin .8s linear infinite; flex: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Responsive (Android / narrow) ---------- */
+  @media (max-width: 1000px) {
+    .grid-4 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .track-head, .track { grid-template-columns: 36px minmax(0, 2fr) minmax(0, 1fr) 70px 90px; }
+    .track .col-album, .track-head .col-album { display: none; }
+  }
+  @media (max-width: 820px) {
+    :root { --player-h: 64px; }
+    .app { grid-template-columns: 1fr; padding-bottom: calc(var(--player-h) + var(--bottomnav-h)); }
+    .sidebar { display: none; }
+    .topbar { display: flex; }
+    .bottom-nav { display: flex; }
+    .view { padding: 18px 16px 32px; }
+    h1 { font-size: 24px; }
+    .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-3 { grid-template-columns: 1fr; }
+    .section-head { flex-wrap: wrap; }
+    .nw { white-space: normal !important; }
+    .grid-2 { grid-template-columns: 1fr; }
+    .radio-cards { grid-template-columns: 1fr; }
+    .track-head { display: none; }
+    .track { grid-template-columns: 36px minmax(0, 1fr) auto; padding: 8px 6px; }
+    .track .col-album, .track .col-source, .track .col-dur { display: none; }
+    .track .actions { opacity: 1; }
+    .player {
+      bottom: var(--bottomnav-h); grid-template-columns: minmax(0, 1fr) auto; padding: 0 12px; gap: 10px;
+      border-radius: 12px 12px 0 0; margin: 0 8px;
+    }
+    .player .controls .seek { display: none; }
+    .player .right, .player .hide-m { display: none; }
+    .player .now .art { width: 44px; height: 44px; }
+    .player .play { width: 40px; height: 40px; }
+    .result { grid-template-columns: 44px minmax(0, 1fr); }
+    .result .acts { grid-column: 2; }
+    .view-head { flex-direction: column; align-items: stretch; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ ICON SPRITE ============ -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-library" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v16M9 4v16M14 6l5 14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M4 19h16"/></symbol>
+    <symbol id="i-import" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5M12 3v12M8 7l4-4 4 4"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4l13 8-13 8z"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h2v16H6zM20 4L9 12l11 8z"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24" fill="currentColor"><path d="M16 4h2v16h-2zM4 4l11 8-11 8z"/></symbol>
+    <symbol id="i-shuffle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4M3 11V9a4 4 0 0 1 4-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 0 1-4 4H3"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4zM15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21l8.8-8.6a5.5 5.5 0 0 0 0-7.8z"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .5-9 7 7 0 0 0-13.3 2A4 4 0 0 0 6 19z"/></symbol>
+    <symbol id="i-server" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 7"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-magnet" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v8a6 6 0 0 0 12 0V3M6 3h4v8a2 2 0 0 0 4 0V3h4"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></symbol>
+    <symbol id="i-laptop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></symbol>
+    <symbol id="i-wave" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h2M7 8v8M11 5v14M15 8v8M19 11v2"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+  <!-- ============ SIDEBAR (desktop) ============ -->
+  <aside class="sidebar">
+    <div class="brand"><span class="logo"><svg width="18" height="18"><use href="#i-music"/></svg></span>Offline Player</div>
+
+    <button class="nav-item active" data-nav="home"><svg><use href="#i-home"/></svg>Home</button>
+    <button class="nav-item" data-nav="library"><svg><use href="#i-library"/></svg>Library<span class="count">1,284</span></button>
+    <button class="nav-item" data-nav="search"><svg><use href="#i-search"/></svg>Search server</button>
+    <button class="nav-item" data-nav="voice"><svg><use href="#i-mic"/></svg>Voice recordings<span class="count">37</span></button>
+
+    <div class="nav-label">Get music</div>
+    <button class="nav-item" data-nav="import"><svg><use href="#i-import"/></svg>Import accounts</button>
+    <button class="nav-item" data-nav="downloads"><svg><use href="#i-download"/></svg>Downloads<span class="count">3</span></button>
+
+    <div class="nav-label">Device</div>
+    <button class="nav-item" data-nav="folders"><svg><use href="#i-folder"/></svg>Scan &amp; folders</button>
+    <button class="nav-item" data-nav="settings"><svg><use href="#i-settings"/></svg>Settings</button>
+
+    <div class="server-pill">
+      <div class="row between"><span class="small" style="font-weight:700">My server</span><span class="dot on"></span></div>
+      <div class="mono faint mt-8">192.168.1.20:8080</div>
+      <div class="small muted mt-8">42,310 tracks · 1.9 TB · ping 3 ms</div>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main" id="main">
+    <div class="topbar">
+      <span class="logo" style="width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#2fb97a);display:grid;place-items:center;color:var(--accent-ink)"><svg width="16" height="16"><use href="#i-music"/></svg></span>
+      <strong id="topbar-title">Home</strong>
+      <span class="flex-1"></span>
+      <span class="badge offline" id="topbar-status"><span class="dot on"></span> Server online</span>
+    </div>
+
+    <!-- ---------- HOME ---------- -->
+    <section class="view active" data-view="home">
+      <div class="view-head">
+        <div><h1>Good evening</h1><p class="sub">Everything here plays without a connection. Server and imports fill in when you're online.</p></div>
+        <div class="row gap-8"><button class="btn" data-go="folders"><svg><use href="#i-refresh"/></svg>Rescan device</button><button class="btn btn-primary"><svg><use href="#i-shuffle"/></svg>Shuffle all</button></div>
+      </div>
+
+      <div class="scan-banner" id="scan-banner">
+        <span class="spinner"></span>
+        <div class="flex-1"><strong>Scanning /home/yashwanth/Music…</strong> <span class="muted" id="scan-text">212 files read · 4 new · 1 voice recording detected</span><div class="progress mt-8"><span id="scan-bar" style="width:38%"></span></div></div>
+        <button class="btn btn-sm btn-ghost" id="scan-stop">Stop</button>
+      </div>
+
+      <div class="grid grid-4 mt-16">
+        <div class="card stat"><span class="num">1,284</span><span class="lbl">Songs on this device</span><span class="small faint">9.4 GB · 92 h 11 m</span></div>
+        <div class="card stat"><span class="num">37</span><span class="lbl">Voice recordings</span><span class="small faint">Kept out of music shuffle</span></div>
+        <div class="card stat"><span class="num">3</span><span class="lbl">Active downloads</span><span class="small faint">2 from server · 1 torrent</span></div>
+        <div class="card stat"><span class="num">42,310</span><span class="lbl">Streamable from My server</span><span class="small faint"><span class="dot on"></span> Online · LAN</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Jump back in</h2><button class="btn btn-ghost btn-sm" data-go="library">See all<svg><use href="#i-arrow"/></svg></button></div>
+        <div class="grid grid-4" id="recent-grid"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Recently added</h2><span class="small muted">From last scan · 2 min ago</span></div>
+        <div class="card pad-0"><div class="track-list" id="home-tracks"></div></div>
+      </div>
+
+      <div class="section grid grid-3">
+        <div class="card">
+          <div class="row between"><h3>Import your accounts</h3><span class="badge offline">Needs internet</span></div>
+          <p class="muted mt-8">Bring playlists and liked songs over, then match them to files you already own.</p>
+          <div class="row gap-8 mt-12"><button class="btn btn-sm" data-go="import"><span class="badge spotify">S</span>Spotify</button><button class="btn btn-sm" data-go="import"><span class="badge youtube">▶</span>YouTube</button></div>
+        </div>
+        <div class="card">
+          <div class="row between"><h3>Search My server</h3><span class="dot on"></span></div>
+          <p class="muted mt-8">Stream instantly on the LAN or download for the road.</p>
+          <button class="btn btn-sm mt-12" data-go="search"><svg><use href="#i-search"/></svg>Open search</button>
+        </div>
+        <div class="card">
+          <div class="row between"><h3>Add a torrent</h3><span class="badge torrent">P2P</span></div>
+          <p class="muted mt-8">Paste a magnet link or open a .torrent file. Audio files land straight in your library.</p>
+          <button class="btn btn-sm mt-12" data-go="downloads"><svg><use href="#i-magnet"/></svg>Paste magnet link</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- LIBRARY ---------- -->
+    <section class="view" data-view="library">
+      <div class="view-head">
+        <div><h1>Library</h1><p class="sub">1,284 songs · 212 albums · 319 artists</p></div>
+        <div class="row gap-8"><button class="btn btn-primary"><svg><use href="#i-play"/></svg>Play</button><button class="btn"><svg><use href="#i-shuffle"/></svg>Shuffle</button></div>
+      </div>
+      <div class="row between wrap gap-8">
+        <div class="chip-row" id="lib-filters">
+          <button class="chip active">All</button><button class="chip">Downloaded</button><button class="chip">On device</button><button class="chip">From server</button><button class="chip">Spotify import</button><button class="chip">YouTube import</button><button class="chip">Torrent</button>
+        </div>
+        <div class="row gap-8">
+          <div class="input-wrap" style="height:36px;min-width:220px"><svg><use href="#i-search"/></svg><input placeholder="Filter library"></div>
+          <select class="select" style="width:150px;height:36px"><option>Recently added</option><option>Title</option><option>Artist</option><option>Album</option><option>Duration</option></select>
+        </div>
+      </div>
+      <div class="tabs mt-16"><button class="tab active">Songs</button><button class="tab">Albums</button><button class="tab">Artists</button><button class="tab">Playlists</button><button class="tab">Folders</button></div>
+      <div class="card pad-0">
+        <div class="track-list">
+          <div class="track-head"><span>#</span><span>Title</span><span class="col-album">Album</span><span class="col-source">Source</span><span class="col-dur">Time</span><span></span></div>
+          <div id="lib-tracks"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- SEARCH (server) ---------- -->
+    <section class="view" data-view="search">
+      <div class="view-head">
+        <div><h1>Search</h1><p class="sub">Searches your self-hosted server first, then your device. Results can be streamed or saved offline.</p></div>
+      </div>
+      <div class="row gap-8 wrap">
+        <div class="input-wrap"><svg><use href="#i-search"/></svg><input id="search-input" placeholder="Search songs, artists, albums on My server…" value="daft punk"></div>
+        <select class="select" style="width:170px"><option>My server</option><option>This device</option><option>Torrent indexers</option><option>Everywhere</option></select>
+        <button class="btn btn-primary"><svg><use href="#i-search"/></svg>Search</button>
+      </div>
+      <div class="row between wrap mt-12">
+        <div class="chip-row"><button class="chip active">All</button><button class="chip">Songs</button><button class="chip">Albums</button><button class="chip">Artists</button><button class="chip">Lossless only</button><button class="chip">Not yet downloaded</button></div>
+        <span class="small muted"><span class="dot on"></span> 192.168.1.20 · 64 results in 41 ms</span>
+      </div>
+
+      <div class="section grid grid-2" style="grid-template-columns: minmax(0, 2fr) minmax(0, 1fr)">
+        <div>
+          <div class="section-head"><h2>Results from My server</h2><button class="btn btn-sm"><svg><use href="#i-download"/></svg>Download all (64)</button></div>
+          <div class="card pad-0" id="server-results"></div>
+        </div>
+        <div>
+          <div class="section-head"><h2>Already on this device</h2></div>
+          <div class="card pad-0" id="device-results"></div>
+          <div class="card mt-16">
+            <h3>Stream vs download</h3>
+            <p class="muted mt-8 small">Streaming uses the LAN connection and keeps nothing on disk. Download saves the original file into your chosen app folder and tags it as <span class="badge server">Server</span>.</p>
+            <dl class="kv mt-12"><dt>Download quality</dt><dd>Original (FLAC / MP3)</dd><dt>Save to</dt><dd class="mono">~/Music/Offline Player</dd><dt>When on mobile data</dt><dd>Ask first</dd></dl>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- VOICE RECORDINGS ---------- -->
+    <section class="view" data-view="voice">
+      <div class="view-head">
+        <div><h1>Voice recordings</h1><p class="sub">Files the classifier identified as speech instead of music. They never show in shuffle or music playlists.</p></div>
+        <div class="row gap-8"><button class="btn"><svg><use href="#i-refresh"/></svg>Re-classify all</button><button class="btn btn-primary"><svg><use href="#i-mic"/></svg>New recording</button></div>
+      </div>
+
+      <div class="grid grid-4">
+        <div class="card stat"><span class="num">37</span><span class="lbl">Recordings</span></div>
+        <div class="card stat"><span class="num">4 h 02 m</span><span class="lbl">Total length</span></div>
+        <div class="card stat"><span class="num">3</span><span class="lbl">Low-confidence</span><span class="small faint">Review below</span></div>
+        <div class="card stat"><span class="num">On device</span><span class="lbl">Classifier</span><span class="small faint">Speech vs music model, runs offline</span></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Needs your review</h2><span class="small muted">Classifier wasn't sure. Confirm or move to music.</span></div>
+        <div class="grid grid-3" id="voice-review"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head">
+          <h2>All recordings</h2>
+          <div class="chip-row"><button class="chip active">All</button><button class="chip">Memos</button><button class="chip">Calls</button><button class="chip">Meetings</button><button class="chip">WhatsApp</button></div>
+        </div>
+        <div class="card pad-0"><div id="voice-list"></div></div>
+      </div>
+    </section>
+
+    <!-- ---------- IMPORT ---------- -->
+    <section class="view" data-view="import">
+      <div class="view-head">
+        <div><h1>Import accounts</h1><p class="sub">Pull playlists and liked songs from the services you already use, then match each track to a file you own on device or on My server.</p></div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <div class="row between">
+            <div class="row gap-8"><span class="badge spotify" style="width:32px;height:32px;justify-content:center;font-size:16px;border-radius:8px">S</span><div><h3>Spotify</h3><span class="small muted">Connected as yash.m · last sync 2 h ago</span></div></div>
+            <span class="badge local"><svg><use href="#i-check"/></svg>Connected</span>
+          </div>
+          <dl class="kv mt-16"><dt>Playlists</dt><dd>24</dd><dt>Liked songs</dt><dd>1,912</dd><dt>Matched to local / server files</dt><dd>1,540 (81%)</dd><dt>Unmatched</dt><dd>372</dd></dl>
+          <div class="progress mt-12"><span style="width:81%"></span></div>
+          <div class="row gap-8 wrap mt-16"><button class="btn btn-sm btn-primary"><svg><use href="#i-refresh"/></svg>Sync now</button><button class="btn btn-sm">Find unmatched on server</button><button class="btn btn-sm btn-ghost">Disconnect</button></div>
+        </div>
+        <div class="card">
+          <div class="row between">
+            <div class="row gap-8"><span class="badge youtube" style="width:32px;height:32px;justify-content:center;font-size:14px;border-radius:8px">▶</span><div><h3>YouTube / YouTube Music</h3><span class="small muted">Not connected</span></div></div>
+            <span class="badge offline">Needs internet</span>
+          </div>
+          <p class="muted mt-16">Imports playlists, liked videos and your YouTube Music library. Entries are matched by title, artist and duration.</p>
+          <div class="row gap-8 wrap mt-16"><button class="btn btn-sm btn-primary"><svg><use href="#i-link"/></svg>Connect Google account</button><button class="btn btn-sm">Import from Takeout file</button></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Imported playlists</h2><div class="chip-row"><button class="chip active">All</button><button class="chip">Fully matched</button><button class="chip">Partial</button></div></div>
+        <div class="card pad-0" id="import-playlists"></div>
+      </div>
+
+      <div class="section card">
+        <h3>How matching works</h3>
+        <div class="grid grid-3 mt-12">
+          <div><div class="badge local">1</div><p class="mt-8"><strong>Fingerprint and tags.</strong> Each imported entry is compared against files on this device and on My server by title, artist, duration and audio fingerprint.</p></div>
+          <div><div class="badge server">2</div><p class="mt-8"><strong>Server fills gaps.</strong> Unmatched tracks found on My server can be streamed, or downloaded in one tap.</p></div>
+          <div><div class="badge torrent">3</div><p class="mt-8"><strong>Still missing?</strong> Send remaining tracks to the torrent search to look for them.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- DOWNLOADS ---------- -->
+    <section class="view" data-view="downloads">
+      <div class="view-head">
+        <div><h1>Downloads</h1><p class="sub">Server downloads and torrents in one queue. Finished audio is tagged and added to your library automatically.</p></div>
+        <div class="row gap-8"><button class="btn"><svg><use href="#i-pause"/></svg>Pause all</button></div>
+      </div>
+
+      <div class="card">
+        <div class="row between wrap"><h3>Add a torrent</h3><span class="small muted">Seeds and peers shown live · 1.2 MB/s up · 4.8 MB/s down</span></div>
+        <div class="row gap-8 wrap mt-12">
+          <div class="input-wrap"><svg><use href="#i-magnet"/></svg><input placeholder="magnet:?xt=urn:btih:…  or paste a .torrent URL"></div>
+          <button class="btn"><svg><use href="#i-folder"/></svg>Open .torrent</button>
+          <button class="btn btn-primary"><svg><use href="#i-plus"/></svg>Add</button>
+        </div>
+        <div class="row gap-16 wrap mt-12 small muted">
+          <label class="row gap-6"><span class="toggle on" data-toggle></span>Only keep audio files</label>
+          <label class="row gap-6"><span class="toggle on" data-toggle></span>Seed after download</label>
+          <label class="row gap-6"><span class="toggle" data-toggle></span>Allow on mobile data</label>
+          <label class="row gap-6"><span class="toggle on" data-toggle></span>Run classifier on finished files</label>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="tabs"><button class="tab active">Active (3)</button><button class="tab">Queued (5)</button><button class="tab">Seeding (2)</button><button class="tab">Completed (118)</button></div>
+        <div class="grid" id="dl-list"></div>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Search torrent indexers</h2><span class="small muted">Results open in this queue</span></div>
+        <div class="row gap-8 wrap">
+          <div class="input-wrap"><svg><use href="#i-search"/></svg><input placeholder="Album, artist or discography…"></div>
+          <select class="select" style="width:180px"><option>All indexers (3)</option><option>Private tracker</option><option>Public indexer A</option><option>Public indexer B</option></select>
+          <button class="btn"><svg><use href="#i-search"/></svg>Search</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- SCAN & FOLDERS ---------- -->
+    <section class="view" data-view="folders">
+      <div class="view-head">
+        <div><h1>Scan &amp; folders</h1><p class="sub">Decide where the app looks for audio on each device, and which folders to skip.</p></div>
+        <div class="row gap-8"><button class="btn btn-primary" id="scan-now"><svg><use href="#i-refresh"/></svg>Scan now</button></div>
+      </div>
+
+      <div class="section-head"><h2>Devices</h2><span class="small muted">Rules are saved per device</span></div>
+      <div class="grid grid-3" id="device-list">
+        <button class="device active"><span class="ic"><svg width="18" height="18"><use href="#i-laptop"/></svg></span><div class="flex-1" style="text-align:left"><div style="font-weight:700">This PC</div><div class="small muted">Linux · 1,284 songs · last scan 2 min ago</div></div><span class="dot on"></span></button>
+        <button class="device"><span class="ic"><svg width="18" height="18"><use href="#i-phone"/></svg></span><div class="flex-1" style="text-align:left"><div style="font-weight:700">Pixel 8</div><div class="small muted">Android 15 · 612 songs · synced 1 h ago</div></div><span class="dot on"></span></button>
+        <button class="device"><span class="ic"><svg width="18" height="18"><use href="#i-phone"/></svg></span><div class="flex-1" style="text-align:left"><div style="font-weight:700">Old Galaxy</div><div class="small muted">Android 12 · 140 songs · offline</div></div><span class="dot"></span></button>
+      </div>
+
+      <div class="section">
+        <div class="section-head"><h2>Where to look on This PC</h2></div>
+        <div class="radio-cards" id="scan-mode">
+          <button class="radio-card"><div class="t">Whole device</div><div class="d">Scan every readable folder for audio. Slowest, finds everything. Uses the exclude list below.</div></button>
+          <button class="radio-card active"><div class="t">Only selected folders</div><div class="d">Scan just the folders in the include list. Recommended on Android for speed and battery.</div></button>
+          <button class="radio-card"><div class="t">App folder only</div><div class="d">Read only the folder you've dedicated to this app. Anything you drop there is picked up.</div></button>
+        </div>
+      </div>
+
+      <div class="section grid grid-2">
+        <div class="card">
+          <div class="row between"><h3><span class="badge voice" style="margin-right:6px">Include</span>Scan these folders</h3><button class="btn btn-sm"><svg><use href="#i-plus"/></svg>Add folder</button></div>
+          <div class="grid mt-12" style="gap:8px">
+            <div class="folder app"><span class="ic" style="background:var(--amber);color:#2b1d00"><svg width="18" height="18"><use href="#i-folder"/></svg></span><div class="flex-1"><div style="font-weight:600">Offline Player <span class="badge voice">App folder</span></div><div class="path">/home/yashwanth/Music/Offline Player</div></div><div class="row gap-6"><span class="small muted">418 files</span><button class="btn btn-icon btn-ghost" title="Change"><svg><use href="#i-more"/></svg></button></div></div>
+            <div class="folder include"><span class="ic"><svg width="18" height="18"><use href="#i-folder"/></svg></span><div class="flex-1"><div style="font-weight:600">Music</div><div class="path">/home/yashwanth/Music</div></div><div class="row gap-6"><span class="small muted">842 files</span><button class="btn btn-icon btn-ghost"><svg><use href="#i-x"/></svg></button></div></div>
+            <div class="folder include"><span class="ic"><svg width="18" height="18"><use href="#i-folder"/></svg></span><div class="flex-1"><div style="font-weight:600">Downloads</div><div class="path">/home/yashwanth/Downloads</div></div><div class="row gap-6"><span class="small muted">61 files</span><button class="btn btn-icon btn-ghost"><svg><use href="#i-x"/></svg></button></div></div>
+            <div class="folder include"><span class="ic"><svg width="18" height="18"><use href="#i-folder"/></svg></span><div class="flex-1"><div style="font-weight:600">External SSD / Rips</div><div class="path">/run/media/yashwanth/SSD/Rips</div></div><div class="row gap-6"><span class="badge offline">Not mounted</span><button class="btn btn-icon btn-ghost"><svg><use href="#i-x"/></svg></button></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="row between"><h3><span class="badge" style="background:var(--rose-dim);color:var(--rose);margin-right:6px">Exclude</span>Never scan these</h3><button class="btn btn-sm"><svg><use href="#i-plus"/></svg>Add folder</button></div>
+          <div class="grid mt-12" style="gap:8px">
+            <div class="folder exclude"><span class="ic"><svg width="18" height="18"><use href="#i-folder"/></svg></span><div class="flex-1"><div style="font-weight:600">WhatsApp Audio</div><div class="path">/sdcard/WhatsApp/Media/WhatsApp Audio</div></div><button class="btn btn-icon btn-ghost"><svg><use href="#i-x"/></svg></button></div>
+            <div class="folder exclude"><span class="ic"><svg width="18" height="18"><use href="#i-folder"/></svg></span><div class="flex-1"><div style="font-weight:600">Notification sounds</div><div class="path">/system/media/audio</div></div><button class="btn btn-icon btn-ghost"><svg><use href="#i-x"/></svg></button></div>
+            <div class="folder exclude"><span class="ic"><svg width="18" height="18"><use href="#i-folder"/></svg></span><div class="flex-1"><div style="font-weight:600">node_modules, .cache, .git</div><div class="path">pattern · any depth</div></div><button class="btn btn-icon btn-ghost"><svg><use href="#i-x"/></svg></button></div>
+          </div>
+          <div class="setting mt-16" style="border-top:1px solid var(--border);padding-top:14px"><div><div class="lbl">Respect .nomedia files</div><div class="desc">Android convention: skip folders that contain a .nomedia marker.</div></div><span class="toggle on" data-toggle></span></div>
+          <div class="setting"><div><div class="lbl">Skip files shorter than</div><div class="desc">Ringtones and UI sounds are usually under this.</div></div><select class="select" style="width:110px"><option>5 s</option><option selected>10 s</option><option>30 s</option></select></div>
+        </div>
+      </div>
+
+      <div class="section grid grid-2">
+        <div class="card">
+          <h3>File types</h3>
+          <div class="chip-row mt-12"><button class="chip active">MP3</button><button class="chip active">FLAC</button><button class="chip active">M4A / AAC</button><button class="chip active">OGG / Opus</button><button class="chip active">WAV</button><button class="chip">WMA</button><button class="chip">AMR / 3GA</button><button class="chip">Video audio tracks</button></div>
+          <p class="small muted mt-12">AMR and 3GA are almost always phone recordings. Turn them on if you want calls and memos in the Voice section.</p>
+        </div>
+        <div class="card">
+          <h3>Music vs voice classifier</h3>
+          <div class="setting mt-8"><div><div class="lbl">Classify new files during scan</div><div class="desc">Runs on device. Roughly 40 ms per file.</div></div><span class="toggle on" data-toggle></span></div>
+          <div class="setting"><div><div class="lbl">Confidence threshold</div><div class="desc">Below this the file is sent to review instead of auto-filed.</div></div><select class="select" style="width:110px"><option>60%</option><option selected>75%</option><option>90%</option></select></div>
+          <div class="setting"><div><div class="lbl">Use tags and folder names as hints</div><div class="desc">"Recordings", "Call rec", missing artist tag, mono audio.</div></div><span class="toggle on" data-toggle></span></div>
+          <div class="setting"><div><div class="lbl">Watch folders for changes</div><div class="desc">Picks up new files without a manual scan.</div></div><span class="toggle on" data-toggle></span></div>
+        </div>
+      </div>
+
+      <div class="section card">
+        <div class="row between wrap"><h3>Last scan · This PC</h3><span class="small muted">Today 18:42 · 11.3 s</span></div>
+        <div class="grid grid-4 mt-12">
+          <div class="stat"><span class="num">1,321</span><span class="lbl">Audio files found</span></div>
+          <div class="stat"><span class="num">1,284</span><span class="lbl">Filed as music</span></div>
+          <div class="stat"><span class="num">37</span><span class="lbl">Filed as voice</span></div>
+          <div class="stat"><span class="num">212</span><span class="lbl">Skipped by rules</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------- SETTINGS ---------- -->
+    <section class="view" data-view="settings">
+      <div class="view-head"><div><h1>Settings</h1><p class="sub">Playback, server connection, storage and sync.</p></div></div>
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>My server</h3>
+          <div class="mt-12"><label class="small muted">Address</label><input class="input mt-8" value="http://192.168.1.20:8080"></div>
+          <div class="grid grid-2 mt-12"><div><label class="small muted">Username</label><input class="input mt-8" value="yashwanth"></div><div><label class="small muted">API token</label><input class="input mt-8" type="password" value="••••••••••••"></div></div>
+          <div class="row gap-8 mt-12"><button class="btn btn-sm btn-primary">Test connection</button><span class="small muted"><span class="dot on"></span> Connected · 3 ms · 42,310 tracks indexed</span></div>
+          <div class="setting mt-16" style="border-top:1px solid var(--border);padding-top:14px"><div><div class="lbl">Reachable from outside the LAN</div><div class="desc">Use a VPN or tunnel address when away from home.</div></div><input class="input" style="width:200px" placeholder="https://music.example.net"></div>
+          <div class="setting"><div><div class="lbl">Cache streamed tracks</div><div class="desc">Keep recently streamed songs for offline replay.</div></div><select class="select" style="width:110px"><option>Off</option><option selected>2 GB</option><option>10 GB</option></select></div>
+        </div>
+        <div class="card">
+          <h3>Playback</h3>
+          <div class="setting mt-8"><div><div class="lbl">Gapless playback</div></div><span class="toggle on" data-toggle></span></div>
+          <div class="setting"><div><div class="lbl">Crossfade</div><div class="desc">Music only. Never applied to voice recordings.</div></div><select class="select" style="width:110px"><option>Off</option><option selected>4 s</option><option>8 s</option></select></div>
+          <div class="setting"><div><div class="lbl">Normalize volume</div><div class="desc">ReplayGain / loudness tags.</div></div><span class="toggle on" data-toggle></span></div>
+          <div class="setting"><div><div class="lbl">Voice recordings playback speed</div><div class="desc">Default speed when opening a recording.</div></div><select class="select" style="width:110px"><option>1.0×</option><option selected>1.25×</option><option>1.5×</option><option>2.0×</option></select></div>
+          <div class="setting"><div><div class="lbl">Skip silence in recordings</div></div><span class="toggle on" data-toggle></span></div>
+          <h3 class="mt-20">Storage</h3>
+          <div class="setting mt-8"><div><div class="lbl">App folder</div><div class="desc mono">/home/yashwanth/Music/Offline Player</div></div><button class="btn btn-sm">Change</button></div>
+          <div class="setting"><div><div class="lbl">Downloads · 6.1 GB</div><div class="desc">Server 4.9 GB · Torrent 1.2 GB</div></div><button class="btn btn-sm btn-danger">Clear</button></div>
+        </div>
+      </div>
+      <div class="section card">
+        <h3>Sync between devices</h3>
+        <p class="muted mt-8">Play counts, playlists, folder rules and the voice/music decisions sync over the LAN through My server. No cloud account needed.</p>
+        <div class="row gap-8 mt-12 wrap"><span class="badge local"><svg><use href="#i-check"/></svg>This PC</span><span class="badge local"><svg><use href="#i-check"/></svg>Pixel 8</span><span class="badge offline">Old Galaxy · last seen 3 d ago</span></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ============ PLAYER BAR ============ -->
+<div class="player">
+  <div class="now">
+    <div class="art"></div>
+    <div class="flex-1" style="min-width:0">
+      <div class="ellipsis" style="font-weight:600">Instant Crush</div>
+      <div class="ellipsis small muted">Daft Punk · <span class="badge local" style="padding:1px 6px">On device</span></div>
+    </div>
+    <button class="btn btn-icon btn-ghost hide-m" title="Like"><svg><use href="#i-heart"/></svg></button>
+  </div>
+  <div class="controls">
+    <div class="ctl-row">
+      <button class="hide-m" title="Shuffle"><svg><use href="#i-shuffle"/></svg></button>
+      <button title="Previous"><svg><use href="#i-prev"/></svg></button>
+      <button class="play" id="play-btn" title="Play / pause"><svg><use href="#i-pause"/></svg></button>
+      <button title="Next"><svg><use href="#i-next"/></svg></button>
+      <button class="hide-m" title="Repeat"><svg><use href="#i-repeat"/></svg></button>
+    </div>
+    <div class="seek"><span class="small dur">1:48</span><div class="progress"><span style="width:32%"></span></div><span class="small dur">5:37</span></div>
+  </div>
+  <div class="right">
+    <button title="Queue"><svg><use href="#i-library"/></svg></button>
+    <button title="Devices"><svg><use href="#i-phone"/></svg></button>
+    <svg><use href="#i-volume"/></svg><div class="progress vol"><span style="width:70%"></span></div>
+  </div>
+</div>
+
+<!-- ============ BOTTOM NAV (mobile) ============ -->
+<nav class="bottom-nav">
+  <button class="active" data-nav="home"><svg><use href="#i-home"/></svg>Home</button>
+  <button data-nav="search"><svg><use href="#i-search"/></svg>Search</button>
+  <button data-nav="library"><svg><use href="#i-library"/></svg>Library</button>
+  <button data-nav="voice"><svg><use href="#i-mic"/></svg>Voice</button>
+  <button data-nav="downloads"><svg><use href="#i-download"/></svg>Get</button>
+  <button data-nav="folders"><svg><use href="#i-folder"/></svg>Folders</button>
+</nav>
+
+<script>
+/* ---------- Sample data (design only) ---------- */
+const palette = ['#3a2f6b,#1e9a7c','#6b2f4a,#e07a3f','#1f3f6b,#5ee39a','#4a1f6b,#ff6b81','#2f6b4a,#f5c542','#6b5a2f,#6fb7ff','#2f4a6b,#b48cff','#6b2f2f,#5ee39a'];
+const cover = (i, txt) => `<div class="cover" style="background:linear-gradient(135deg,${palette[i % palette.length]})">${txt}</div>`;
+
+const tracks = [
+  {t:'Instant Crush', a:'Daft Punk', al:'Random Access Memories', d:'5:37', s:'local', playing:true},
+  {t:'Nightcall', a:'Kavinsky', al:'OutRun', d:'4:18', s:'server'},
+  {t:'Midnight City', a:'M83', al:'Hurry Up, We\'re Dreaming', d:'4:03', s:'spotify'},
+  {t:'Redbone', a:'Childish Gambino', al:'Awaken, My Love!', d:'5:27', s:'youtube'},
+  {t:'Pink + White', a:'Frank Ocean', al:'Blonde', d:'3:04', s:'local'},
+  {t:'Time', a:'Pink Floyd', al:'The Dark Side of the Moon', d:'6:53', s:'torrent'},
+  {t:'Kabhi Kabhi Aditi', a:'Rashid Ali', al:'Jaane Tu… Ya Jaane Na', d:'3:52', s:'local'},
+  {t:'Tum Hi Ho', a:'Arijit Singh', al:'Aashiqui 2', d:'4:22', s:'server'},
+  {t:'Nikes', a:'Frank Ocean', al:'Blonde', d:'5:14', s:'local'},
+  {t:'Alone in Kyoto', a:'Air', al:'Talkie Walkie', d:'4:51', s:'torrent'},
+];
+const srcLabel = {local:'On device', server:'Server', spotify:'Spotify', youtube:'YouTube', torrent:'Torrent'};
+
+const trackRow = (x, i) => `
+  <div class="track ${x.playing ? 'playing' : ''}">
+    <div class="idx"><span>${i + 1}</span></div>
+    <div class="row gap-8" style="min-width:0"><div class="art"><svg width="16" height="16"><use href="#i-music"/></svg></div><div style="min-width:0"><div class="title ellipsis">${x.t}</div><div class="small muted ellipsis">${x.a}</div></div></div>
+    <div class="col-album muted ellipsis">${x.al}</div>
+    <div class="col-source"><span class="badge ${x.s}">${srcLabel[x.s]}</span></div>
+    <div class="col-dur dur">${x.d}</div>
+    <div class="actions"><button class="btn btn-icon btn-ghost" title="Like"><svg><use href="#i-heart"/></svg></button><button class="btn btn-icon btn-ghost" title="More"><svg><use href="#i-more"/></svg></button></div>
+  </div>`;
+
+document.getElementById('lib-tracks').innerHTML = tracks.map(trackRow).join('');
+document.getElementById('home-tracks').innerHTML = tracks.slice(0, 5).map(trackRow).join('');
+
+const recents = [
+  {t:'Random Access Memories', s:'Daft Punk · Album', c:'RAM'},
+  {t:'Late night drive', s:'Playlist · 48 songs', c:'LN'},
+  {t:'Blonde', s:'Frank Ocean · Album', c:'B'},
+  {t:'Liked from Spotify', s:'Imported · 1,912 songs', c:'♥'},
+];
+document.getElementById('recent-grid').innerHTML = recents.map((r, i) => `<button class="tile">${cover(i, r.c)}<div><div class="t ellipsis">${r.t}</div><div class="small muted ellipsis">${r.s}</div></div></button>`).join('');
+
+/* Server search results */
+const serverResults = [
+  {t:'Instant Crush (feat. Julian Casablancas)', a:'Daft Punk', al:'Random Access Memories · 2013', f:'FLAC 44.1/16', sz:'38 MB', have:true},
+  {t:'Get Lucky', a:'Daft Punk', al:'Random Access Memories · 2013', f:'FLAC 44.1/16', sz:'42 MB'},
+  {t:'Something About Us', a:'Daft Punk', al:'Discovery · 2001', f:'MP3 320', sz:'9 MB'},
+  {t:'Veridis Quo', a:'Daft Punk', al:'Discovery · 2001', f:'MP3 320', sz:'13 MB'},
+  {t:'Derezzed', a:'Daft Punk', al:'TRON: Legacy · 2010', f:'FLAC 44.1/24', sz:'29 MB'},
+  {t:'Discovery (full album)', a:'Daft Punk', al:'14 tracks · 2001', f:'MP3 320', sz:'146 MB', album:true},
+];
+document.getElementById('server-results').innerHTML = serverResults.map(r => `
+  <div class="result">
+    <div class="art"><svg width="18" height="18"><use href="#i-${r.album ? 'library' : 'music'}"/></svg></div>
+    <div style="min-width:0"><div class="ellipsis" style="font-weight:600">${r.t}</div><div class="meta"><span>${r.a}</span><span>${r.al}</span><span class="mono">${r.f}</span><span>${r.sz}</span></div></div>
+    <div class="acts">
+      <button class="btn btn-sm"><svg><use href="#i-play"/></svg>Stream</button>
+      ${r.have ? '<span class="btn btn-sm" style="color:var(--accent);border-color:transparent"><svg><use href="#i-check"/></svg>On device</span>' : '<button class="btn btn-sm btn-primary"><svg><use href="#i-download"/></svg>Download</button>'}
+    </div>
+  </div>`).join('');
+document.getElementById('device-results').innerHTML = [tracks[0], {t:'Around the World', a:'Daft Punk', al:'Homework'}].map(r => `
+  <div class="result">
+    <div class="art"><svg width="18" height="18"><use href="#i-music"/></svg></div>
+    <div style="min-width:0"><div class="ellipsis" style="font-weight:600">${r.t}</div><div class="meta"><span>${r.a}</span><span>${r.al}</span></div></div>
+    <div class="acts"><button class="btn btn-sm btn-primary"><svg><use href="#i-play"/></svg>Play</button></div>
+  </div>`).join('');
+
+/* Voice recordings */
+const wave = () => `<div class="wave">${Array.from({length: 28}, () => `<i style="height:${4 + Math.round(Math.random() * 28)}px"></i>`).join('')}</div>`;
+const review = [
+  {n:'Rec 2026-10-14 09.12.m4a', f:'/Recordings/Voice', d:'2:14', c:'62% voice', why:'Mono, no artist tag, speech detected for 71% of duration'},
+  {n:'Jam session idea.mp3', f:'/Music/Scratch', d:'1:03', c:'58% music', why:'Guitar + humming. Could be either.'},
+  {n:'WhatsApp PTT 2026-10-11.opus', f:'/WhatsApp Audio', d:'0:41', c:'69% voice', why:'Opus, short, single speaker'},
+];
+document.getElementById('voice-review').innerHTML = review.map(r => `
+  <div class="card">
+    <div class="row between"><span class="badge voice">${r.c}</span><span class="dur small">${r.d}</span></div>
+    <div class="mt-12" style="font-weight:600" title="${r.n}">${r.n}</div>
+    <div class="small faint mono ellipsis">${r.f}</div>
+    <div class="mt-12">${wave()}</div>
+    <p class="small muted mt-8">${r.why}</p>
+    <div class="row gap-6 mt-12"><button class="btn btn-sm btn-primary"><svg><use href="#i-check"/></svg>Keep as voice</button><button class="btn btn-sm"><svg><use href="#i-music"/></svg>Move to music</button></div>
+  </div>`).join('');
+
+const recs = [
+  {n:'Standup notes — sprint 14', k:'Memo', d:'Oct 17 · 6:21', f:'Recordings/Voice', c:'97%'},
+  {n:'Call with landlord', k:'Call', d:'Oct 15 · 12:04', f:'Call Recordings', c:'99%'},
+  {n:'Lyrics idea, verse 2', k:'Memo', d:'Oct 12 · 0:48', f:'Recordings/Voice', c:'88%'},
+  {n:'Team retro', k:'Meeting', d:'Oct 10 · 41:17', f:'Recordings/Meetings', c:'99%'},
+  {n:'PTT-20261009-WA0012', k:'WhatsApp', d:'Oct 9 · 0:22', f:'WhatsApp Audio', c:'95%'},
+  {n:'Grocery list reminder', k:'Memo', d:'Oct 8 · 0:15', f:'Recordings/Voice', c:'98%'},
+];
+document.getElementById('voice-list').innerHTML = recs.map((r, i) => `
+  <div class="track" style="grid-template-columns:36px minmax(0,1fr) auto">
+    <div class="idx"><span>${i + 1}</span></div>
+    <div class="row gap-8" style="min-width:0"><div class="art" style="color:var(--amber)"><svg width="16" height="16"><use href="#i-wave"/></svg></div><div style="min-width:0"><div class="title ellipsis">${r.n}</div><div class="small muted ellipsis"><span class="badge voice" style="padding:0 6px">${r.k}</span> · ${r.d} · <span class="mono">${r.f}</span></div></div></div>
+    <div class="row gap-6"><span class="small faint">${r.c}</span><button class="btn btn-icon btn-ghost" title="Transcribe"><svg><use href="#i-mic"/></svg></button><button class="btn btn-icon btn-ghost" title="More"><svg><use href="#i-more"/></svg></button></div>
+  </div>`).join('');
+
+/* Imported playlists */
+const playlists = [
+  {n:'Liked Songs', s:'spotify', c:1912, m:1540},
+  {n:'Late night drive', s:'spotify', c:48, m:48},
+  {n:'Gym 2026', s:'spotify', c:73, m:61},
+  {n:'Indian classical', s:'spotify', c:120, m:34},
+  {n:'Watch later (audio)', s:'youtube', c:210, m:0, pending:true},
+];
+document.getElementById('import-playlists').innerHTML = playlists.map(p => {
+  const pct = Math.round(p.m / p.c * 100);
+  return `<div class="result" style="grid-template-columns:44px minmax(0,1fr) auto">
+    <div class="art"><span class="badge ${p.s}">${p.s === 'spotify' ? 'S' : '▶'}</span></div>
+    <div style="min-width:0"><div class="row gap-8"><span style="font-weight:600">${p.n}</span>${p.pending ? '<span class="badge offline">Connect to import</span>' : ''}</div>
+      <div class="row gap-8 mt-8"><div class="progress flex-1 ${p.s === 'youtube' ? 'sky' : ''}"><span style="width:${pct}%"></span></div><span class="small muted nw" style="white-space:nowrap">${p.m}/${p.c} matched · ${pct}%</span></div></div>
+    <div class="acts">${p.pending ? '<button class="btn btn-sm">Connect</button>' : `<button class="btn btn-sm"><svg><use href="#i-play"/></svg>Play matched</button>${pct < 100 ? '<button class="btn btn-sm btn-primary"><svg><use href="#i-server"/></svg>Find on server</button>' : ''}`}</div>
+  </div>`;
+}).join('');
+
+/* Downloads */
+const dls = [
+  {n:'Daft Punk – Discovery (2001) [FLAC]', k:'torrent', p:64, sp:'4.8 MB/s', eta:'2 min', extra:'Seeds 38 · Peers 12 · 14 audio files · 412 MB', files:'14/14 audio kept, 3 images skipped'},
+  {n:'Arijit Singh – Tum Hi Ho.flac', k:'server', p:91, sp:'11.2 MB/s', eta:'3 s', extra:'From My server · 29 MB'},
+  {n:'Pink Floyd – The Dark Side of the Moon (2011 remaster)', k:'server', p:22, sp:'10.7 MB/s', eta:'38 s', extra:'From My server · album · 10 files · 310 MB'},
+];
+document.getElementById('dl-list').innerHTML = dls.map(d => `
+  <div class="card">
+    <div class="row between wrap gap-8">
+      <div class="row gap-8 flex-1" style="min-width:0"><span class="badge ${d.k}">${d.k === 'torrent' ? 'Torrent' : 'Server'}</span><span class="ellipsis" style="font-weight:600">${d.n}</span></div>
+      <div class="row gap-6"><button class="btn btn-icon btn-ghost" title="Pause"><svg><use href="#i-pause"/></svg></button><button class="btn btn-icon btn-ghost" title="Remove"><svg><use href="#i-x"/></svg></button></div>
+    </div>
+    <div class="row gap-8 mt-12"><div class="progress flex-1 ${d.k === 'torrent' ? 'violet' : 'sky'}"><span style="width:${d.p}%"></span></div><span class="small mono nw" style="white-space:nowrap">${d.p}% · ${d.sp} · ${d.eta}</span></div>
+    <div class="small muted mt-8">${d.extra}${d.files ? ' · ' + d.files : ''}</div>
+  </div>`).join('');
+
+/* ---------- Interactions ---------- */
+const titles = {home:'Home', library:'Library', search:'Search', voice:'Voice recordings', import:'Import accounts', downloads:'Downloads', folders:'Scan & folders', settings:'Settings'};
+function go(view) {
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.dataset.view === view));
+  document.querySelectorAll('[data-nav]').forEach(b => b.classList.toggle('active', b.dataset.nav === view));
+  document.getElementById('topbar-title').textContent = titles[view] || view;
+  document.getElementById('main').scrollTo({top: 0});
+  history.replaceState(null, '', '#' + view);
+}
+document.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => go(b.dataset.nav)));
+if (titles[location.hash.slice(1)]) go(location.hash.slice(1));
+document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go)));
+
+document.querySelectorAll('[data-toggle]').forEach(t => t.addEventListener('click', () => t.classList.toggle('on')));
+document.querySelectorAll('.chip-row').forEach(row => row.addEventListener('click', e => {
+  const c = e.target.closest('.chip'); if (!c) return;
+  const multi = row.closest('.card') && row.closest('.card').querySelector('h3') && row.closest('.card').querySelector('h3').textContent === 'File types';
+  if (multi) { c.classList.toggle('active'); return; }
+  row.querySelectorAll('.chip').forEach(x => x.classList.remove('active')); c.classList.add('active');
+}));
+document.querySelectorAll('.tabs').forEach(tabs => tabs.addEventListener('click', e => {
+  const t = e.target.closest('.tab'); if (!t) return;
+  tabs.querySelectorAll('.tab').forEach(x => x.classList.remove('active')); t.classList.add('active');
+}));
+document.getElementById('scan-mode').addEventListener('click', e => {
+  const c = e.target.closest('.radio-card'); if (!c) return;
+  document.querySelectorAll('#scan-mode .radio-card').forEach(x => x.classList.remove('active')); c.classList.add('active');
+});
+document.getElementById('device-list').addEventListener('click', e => {
+  const d = e.target.closest('.device'); if (!d) return;
+  document.querySelectorAll('#device-list .device').forEach(x => x.classList.remove('active')); d.classList.add('active');
+});
+
+const playBtn = document.getElementById('play-btn');
+let playing = true;
+playBtn.addEventListener('click', () => { playing = !playing; playBtn.innerHTML = `<svg><use href="#i-${playing ? 'pause' : 'play'}"/></svg>`; });
+
+/* Fake scan progress so the banner feels alive */
+let scanTimer = null;
+function startScan() {
+  go('home');
+  const banner = document.getElementById('scan-banner'), bar = document.getElementById('scan-bar'), txt = document.getElementById('scan-text');
+  banner.classList.add('show'); let p = 0; clearInterval(scanTimer);
+  scanTimer = setInterval(() => {
+    p = Math.min(100, p + 3 + Math.random() * 5); bar.style.width = p + '%';
+    txt.textContent = `${Math.round(p * 13.2)} files read · ${Math.round(p / 25)} new · ${p > 40 ? 1 : 0} voice recording detected`;
+    if (p >= 100) { clearInterval(scanTimer); setTimeout(() => banner.classList.remove('show'), 1200); }
+  }, 180);
+}
+document.getElementById('scan-now').addEventListener('click', startScan);
+document.getElementById('scan-stop').addEventListener('click', () => { clearInterval(scanTimer); document.getElementById('scan-banner').classList.remove('show'); });
+</script>
+</body>
+</html>

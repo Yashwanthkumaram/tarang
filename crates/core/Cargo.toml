@@ -1,0 +1,33 @@
+[package]
+name = "offline_core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-independent core: library database, scanning, music/voice classification, YouTube Music"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+walkdir = "2"
+lofty = "0.25"
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "aac", "flac", "vorbis", "pcm", "adpcm", "isomp4", "ogg", "wav", "mkv", "aiff"] }
+rustfft = "6"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+futures = "0.3"
+libc = "0.2"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4"] }
+ytmapi-rs = { version = "0.3", default-features = false, features = ["rustls", "simplified-queries", "reqwest"] }
+# ytmapi-rs uses reqwest 0.13, whose rustls backend relies on the platform verifier
+# (needs Android JNI setup). We hand it a client with bundled webpki roots instead.
+reqwest13 = { package = "reqwest", version = "0.13", default-features = false, features = ["rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["aws-lc-rs", "std", "tls12"] }
+webpki-roots = "1"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,14 @@
+{
+  "name": "tarang",
+  "version": "0.1.0",
+  "description": "Tarang: an offline-first music player for desktop and Android",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.3"
+  },
+  "private": true
+}

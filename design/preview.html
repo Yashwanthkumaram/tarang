@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design Preview</title>
+<style>
+  :root { --bg:#f4f4f6; --panel:#fff; --line:#dedee3; --text:#18181c; --muted:#62646d; --accent:#d7263d; --accent-dim:rgba(215,38,61,.1); }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; grid-template-columns: 220px 1fr; font: 14px/1.4 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  nav { background: var(--panel); border-right: 1px solid var(--line); padding: 16px 10px; overflow-y: auto; }
+  nav h1 { font-size: 15px; margin: 4px 8px 4px; }
+  nav p { margin: 0 8px 14px; color: var(--muted); font-size: 12px; }
+  nav button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 9px 10px; border-radius: 8px; font: inherit; color: var(--muted); cursor: pointer; }
+  nav button:hover { background: var(--bg); color: var(--text); }
+  nav button.on { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+  main { display: flex; flex-direction: column; min-width: 0; }
+  header { display: flex; gap: 8px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  header .seg button { border: 0; background: none; padding: 6px 14px; font: inherit; cursor: pointer; color: var(--muted); }
+  header .seg button.on { background: var(--text); color: #fff; }
+  header .title { font-weight: 700; margin-right: auto; }
+  header a { color: var(--accent); font-size: 13px; }
+  .stage { flex: 1; overflow: auto; display: grid; place-items: start center; padding: 20px; }
+  .frame { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,.08); transform-origin: top center; }
+  .frame.phone { border-radius: 34px; border: 10px solid #1d1d22; }
+  iframe { border: 0; display: block; }
+  .hint { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<nav>
+  <h1>Offline Player v2</h1>
+  <p>Work in progress: screens still under review may change. Arrow keys switch screens.</p>
+  <div id="list"></div>
+</nav>
+<main>
+  <header>
+    <span class="title" id="t"></span>
+    <span class="seg" id="dev"><button data-v="desktop" class="on">Desktop</button><button data-v="phone">Phone</button></span>
+    <span class="seg" id="theme"><button data-v="light" class="on">Light</button><button data-v="dark">Dark</button></span>
+    <a id="open" target="_blank">Open alone ↗</a>
+  </header>
+  <div class="stage" id="stage"><div class="frame" id="frame"><iframe id="f" title="Screen"></iframe></div></div>
+</main>
+<script>
+  const screens = ['onboarding','home','search','library','playlist','now-playing','notification','downloads','voice','device','settings','_components'];
+  let cur = 0, dev = 'desktop', theme = 'light';
+  const list = document.getElementById('list'), f = document.getElementById('f'), frame = document.getElementById('frame'), stage = document.getElementById('stage');
+  list.innerHTML = screens.map((s, i) => `<button data-i="${i}">${s === '_components' ? 'Component sheet' : s.replace('-', ' ').replace(/^./, c => c.toUpperCase())}</button>`).join('');
+  function fit() {
+    const w = dev === 'desktop' ? 1440 : 390, h = dev === 'desktop' ? 900 : 844;
+    f.width = w; f.height = h;
+    const scale = Math.min(1, (stage.clientWidth - 40) / (w + 20), dev === 'desktop' ? (stage.clientHeight - 40) / (h + 20) : 1);
+    frame.style.transform = `scale(${scale})`;
+    frame.className = 'frame ' + dev;
+    stage.style.height = '';
+  }
+  function show() {
+    const url = `screens/${screens[cur]}.html${theme === 'dark' ? '?theme=dark' : ''}`;
+    f.src = url; document.getElementById('open').href = url;
+    document.getElementById('t').textContent = list.children[cur].textContent;
+    [...list.children].forEach((b, i) => b.classList.toggle('on', i === cur));
+    fit();
+  }
+  list.addEventListener('click', (e) => { const b = e.target.closest('[data-i]'); if (b) { cur = +b.dataset.i; show(); } });
+  for (const [id, set] of [['dev', (v) => dev = v], ['theme', (v) => theme = v]]) {
+    document.getElementById(id).addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      set(b.dataset.v); [...b.parentNode.children].forEach((x) => x.classList.toggle('on', x === b)); show();
+    });
+  }
+  addEventListener('keydown', (e) => { if (e.key === 'ArrowDown' || e.key === 'ArrowRight') { cur = (cur + 1) % screens.length; show(); } if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') { cur = (cur - 1 + screens.length) % screens.length; show(); } });
+  addEventListener('resize', fit);
+  show();
+</script>
+</body>
+</html>
