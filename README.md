@@ -21,18 +21,20 @@ tarang/
 
 ## Download
 
-Get the latest build from [Releases](https://github.com/Yashwanthkumaram/tarang/releases/latest):
+**[⬇️ Get Tarang from the latest release](https://github.com/Yashwanthkumaram/tarang/releases/latest)**:
+pick your device in the table at the top of that page. Each device also has a few short
+install steps written for non-technical users (including what to click when Windows or
+Android warns about an app from an unknown developer).
 
-| Platform | File |
+| Device | File |
 |---|---|
-| Windows | `Tarang_<version>_x64-setup.exe` |
-| Linux | `Tarang_<version>_amd64.AppImage` (self-updating) or `.deb` |
-| Android (arm64) | `Tarang_<version>_android-universal.apk` |
-| macOS (optional, unsigned) | `Tarang_<version>_universal.dmg`: right-click → Open the first time |
+| 🪟 Windows | `Tarang_<version>_x64-setup.exe` |
+| 🤖 Android | `Tarang_<version>_android-universal.apk` |
+| 🍎 Mac | `Tarang_<version>_universal.dmg` |
+| 🐧 Linux | `Tarang_<version>_amd64.AppImage` (or the `.deb`) |
 
-Installed apps update themselves: Tarang checks GitHub once a day and offers the new version.
-You can also check by hand in **Settings › About**. Desktop updates are verified with the
-updater key. Android installs only an APK signed with the same key as the installed app.
+Once installed, Tarang updates itself. It checks GitHub once a day and offers new versions,
+or you can check by hand in **Settings › About**.
 
 ## Releasing
 
@@ -42,7 +44,8 @@ scripts/release.sh 0.2.0   # bumps every version, commits, tags v0.2.0, pushes
 
 The tag starts `.github/workflows/release.yml`. It builds Windows (NSIS), Linux (AppImage + deb),
 macOS (universal) and the signed Android APK, uploads them with `latest.json`, and then publishes
-the release. Installed apps see the update only once it is published. Repository secrets:
+the release. Release notes (download table plus install steps) are written by
+`scripts/release-notes.sh` just before publishing. Installed apps see the update only once it is published. Repository secrets:
 `TAURI_SIGNING_PRIVATE_KEY`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, `ANDROID_KEYSTORE_BASE64` and
 `ANDROID_KEYSTORE_PASSWORD`. The originals are kept outside the repo in `~/.tarang-keys/`. Losing
 them means installed apps can no longer be updated, so back them up.
