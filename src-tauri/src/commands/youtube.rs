@@ -104,8 +104,9 @@ mod platform {
         }
     }
 
-    /// Direct audio URL for streaming (yt-dlp -g). Returns (url, resolve ms).
-    pub async fn stream_url(state: &AppState, video_id: &str) -> CmdResult<(String, u64)> {
+    /// Direct audio URL for streaming (yt-dlp -g). Returns (url, headers, resolve ms).
+    /// No headers on desktop: the WebView's <audio> element cannot send any.
+    pub async fn stream_url(state: &AppState, video_id: &str) -> CmdResult<(String, super::Headers, u64)> {
         let bin = ytdlp::ensure_binary(&state.data_dir).await.map_err(err)?;
         let t = std::time::Instant::now();
         let resolve = |xargs: &'static str| {
@@ -131,7 +132,7 @@ mod platform {
             }
             r => r?,
         };
-        Ok((url, t.elapsed().as_millis() as u64))
+        Ok((url, Default::default(), t.elapsed().as_millis() as u64))
     }
 
     pub async fn update(state: &AppState) -> CmdResult<String> {
@@ -319,13 +320,14 @@ mod platform {
         Ok(r.version)
     }
 
-    pub async fn stream_url(yt: &YtState, video_id: &str) -> CmdResult<(String, u64)> {
+    /// Stream URL plus the HTTP headers it needs (the native player sends them, D46).
+    pub async fn stream_url(yt: &YtState, video_id: &str) -> CmdResult<(String, super::Headers, u64)> {
         #[derive(Serialize)]
         struct UrlArgs { url: String }
         #[derive(Deserialize)]
-        struct R { url: String, ms: u64 }
+        struct R { url: String, #[serde(default)] headers: super::Headers, ms: u64 }
         let r: R = yt.plugin.run_mobile_plugin("resolve", UrlArgs { url: format!("https://music.youtube.com/watch?v={video_id}") }).map_err(err)?;
-        Ok((r.url, r.ms))
+        Ok((r.url, r.headers, r.ms))
     }
 
     pub async fn update(yt: &YtState) -> CmdResult<String> {
@@ -420,8 +422,19 @@ use std::sync::{Arc, OnceLock};
 use tauri::{AppHandle, Manager};
 use tokio::sync::{OnceCell, Semaphore};
 
-/// (url, resolve ms, unix time it stops being usable)
-type Resolved = Result<(String, u64, i64), String>;
+/// HTTP headers a stream URL needs (yt-dlp's `http_headers`).
+pub type Headers = HashMap<String, String>;
+
+/// A resolved stream link.
+#[derive(Clone)]
+struct Link {
+    url: String,
+    headers: Headers,
+    ms: u64,
+    /// Unix time after which it should not be used.
+    until: i64,
+}
+type Resolved = Result<Link, String>;
 
 /// At most this many yt-dlp resolves run at once (each is a Python process on Android).
 const MAX_PARALLEL_RESOLVES: usize = 2;
@@ -455,7 +468,7 @@ fn usable_until(url: &str) -> i64 {
         .unwrap_or_else(|| now() + DEFAULT_TTL_SECS)
 }
 
-async fn resolve_uncached(app: &AppHandle, video_id: &str) -> Result<(String, u64), String> {
+async fn resolve_uncached(app: &AppHandle, video_id: &str) -> Result<(String, Headers, u64), String> {
     let _slot = resolve_slots().acquire().await.map_err(err)?;
     #[cfg(not(target_os = "android"))]
     {
@@ -470,11 +483,14 @@ async fn resolve_uncached(app: &AppHandle, video_id: &str) -> Result<(String, u6
 }
 
 /// Returns a usable link for `video_id` and whether it came from the cache.
-async fn resolve_cached(app: &AppHandle, video_id: &str) -> Result<(String, u64, bool), String> {
+/// `fresh`: drop any cached link first. The player asks for this after the stream server
+/// refused a cached link: links are bound to the IP that resolved them, so they stop
+/// working when the phone switches between Wi-Fi and mobile data.
+async fn resolve_cached(app: &AppHandle, video_id: &str, fresh: bool) -> Result<(Link, bool), String> {
     let cell = {
         let mut map = links().lock().unwrap();
-        let stale = match map.get(video_id).and_then(|c| c.get()) {
-            Some(Ok((_, _, until))) => *until <= now(),
+        let stale = fresh || match map.get(video_id).and_then(|c| c.get()) {
+            Some(Ok(l)) => l.until <= now(),
             Some(Err(_)) => true,
             None => false, // absent, or a resolve is in flight: join it
         };
@@ -483,16 +499,19 @@ async fn resolve_cached(app: &AppHandle, video_id: &str) -> Result<(String, u64,
         }
         map.entry(video_id.to_string()).or_insert_with(|| Arc::new(OnceCell::new())).clone()
     };
-    let mut fresh = false;
+    let mut resolved_now = false;
     let r = cell
         .get_or_init(|| async {
-            fresh = true;
-            resolve_uncached(app, video_id).await.map(|(url, ms)| { let until = usable_until(&url); (url, ms, until) })
+            resolved_now = true;
+            resolve_uncached(app, video_id).await.map(|(url, headers, ms)| {
+                let until = usable_until(&url);
+                Link { url, headers, ms, until }
+            })
         })
         .await
         .clone();
     match r {
-        Ok((url, ms, _)) => Ok((url, ms, !fresh)),
+        Ok(link) => Ok((link, !resolved_now)),
         Err(e) => {
             links().lock().unwrap().remove(video_id); // allow a retry
             Err(e)
@@ -501,12 +520,13 @@ async fn resolve_cached(app: &AppHandle, video_id: &str) -> Result<(String, u64,
 }
 
 /// Direct, device-bound audio URL for streaming a YouTube Music song:
-/// `{ url, resolve_ms, cached }`. googlevideo URLs are tied to the requesting IP and
+/// `{ url, headers, resolve_ms, cached }`. googlevideo URLs are tied to the requesting IP and
 /// expire after a few hours, so they are resolved on the device that plays and cached.
+/// `fresh: true` bypasses the cache (after the server refused a cached link).
 #[tauri::command]
-pub async fn youtube_stream_url(app: AppHandle, video_id: String) -> CmdResult<serde_json::Value> {
-    let (url, ms, cached) = resolve_cached(&app, &video_id).await?;
-    Ok(serde_json::json!({ "url": url, "resolve_ms": ms, "cached": cached }))
+pub async fn youtube_stream_url(app: AppHandle, video_id: String, fresh: Option<bool>) -> CmdResult<serde_json::Value> {
+    let (link, cached) = resolve_cached(&app, &video_id, fresh.unwrap_or(false)).await?;
+    Ok(serde_json::json!({ "url": link.url, "headers": link.headers, "resolve_ms": link.ms, "cached": cached }))
 }
 
 /// Resolves links in the background so a later Play hits the cache. Returns at once.
@@ -515,7 +535,7 @@ pub fn youtube_prefetch(app: AppHandle, video_ids: Vec<String>) {
     for id in video_ids.into_iter().take(MAX_PREFETCH) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
-            if let Err(e) = resolve_cached(&app, &id).await {
+            if let Err(e) = resolve_cached(&app, &id, false).await {
                 tracing::info!("prefetch {id} failed: {e}");
             }
         });

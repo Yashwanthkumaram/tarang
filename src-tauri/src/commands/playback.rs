@@ -145,6 +145,7 @@ mod android {
         artwork_url: Option<String>,
         autoplay: Option<bool>,
         start_ms: Option<u64>,
+        headers: Option<std::collections::HashMap<String, String>>,
     ) -> CmdResult<PlaybackStatus> {
         if url.is_none() && path.is_none() {
             return Err("playback_load needs a path or a url".into());
@@ -153,6 +154,7 @@ mod android {
             "url": url, "path": path, "videoId": video_id,
             "title": title, "artist": artist, "album": album, "artworkUrl": artwork_url,
             "cacheMb": cache_mb(&state), "autoplay": autoplay.unwrap_or(false), "startMs": start_ms.unwrap_or(0),
+            "headers": headers.unwrap_or_default(),
         });
         call(&app, &st, "load", args)
     }
@@ -255,8 +257,9 @@ mod desktop {
         artwork_url: Option<String>,
         autoplay: Option<bool>,
         start_ms: Option<u64>,
+        headers: Option<std::collections::HashMap<String, String>>,
     ) -> CmdResult<PlaybackStatus> {
-        let _ = (url, path, video_id, title, artist, album, artwork_url, autoplay, start_ms);
+        let _ = (url, path, video_id, title, artist, album, artwork_url, autoplay, start_ms, headers);
         Err(ANDROID_ONLY.into())
     }
 

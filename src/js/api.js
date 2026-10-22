@@ -77,7 +77,8 @@ export const api = {
 
   // YouTube Music
   youtubeSearch: (query, limit = 30) => invoke('youtube_search', { query, limit }),
-  youtubeStreamUrl: (videoId) => invoke('youtube_stream_url', { videoId }),
+  /** → { url, headers, resolve_ms, cached }; fresh: skip the cached link (after a 403) */
+  youtubeStreamUrl: (videoId, fresh = false) => invoke('youtube_stream_url', { videoId, fresh }),
   /** Fire-and-forget: resolves stream links ahead of time (D22). Never throws. */
   youtubePrefetch: (videoIds) => (videoIds?.length ? invoke('youtube_prefetch', { videoIds }).catch(() => {}) : Promise.resolve()),
   youtubeDownload: (track) => invoke('youtube_download', { track }),

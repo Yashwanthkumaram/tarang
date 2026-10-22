@@ -23,6 +23,15 @@ let engine = null;
 let uidSeq = 0;
 let startedFor = null;        // uid whose play was recorded
 let errorStreak = 0;
+/** Auto-skip pending after a failed song; cancelled by anything the user does (D46). */
+let skipTimer = null;
+/** uid of the queue entry whose failure was already handled (each song fails once). */
+let failedUid = null;
+/** uid of the entry already retried with a freshly resolved link. */
+let retriedUid = null;
+/** Songs that may fail in a row before auto-skipping stops. */
+const MAX_AUTO_SKIPS = 3;
+function cancelAutoSkip() { clearTimeout(skipTimer); skipTimer = null; }
 let sleepTimer = null;
 const subs = new Set();
 const timeSubs = new Set();
@@ -102,7 +111,8 @@ function voiceRate(item) {
 }
 
 // ---------------------------------------------------------------- loading
-async function load(autoplay = true) {
+async function load(autoplay = true, { fresh = false, startAt = 0 } = {}) {
+  cancelAutoSkip();
   const entry = state.queue[state.index];
   if (!entry) return;
   let it = entry.item;
@@ -126,7 +136,7 @@ async function load(autoplay = true) {
   let source;
   try {
     source = needsStream(it)
-      ? { src: (await api.youtubeStreamUrl(it.video_id)).url, videoId: it.video_id, duration: it.duration_secs }
+      ? await api.youtubeStreamUrl(it.video_id, fresh).then((r) => ({ src: r.url, headers: r.headers, videoId: it.video_id, duration: it.duration_secs }))
       : { path: it.path, duration: it.duration_secs };
   } catch (e) {
     if (state.queue[state.index]?.uid !== uid) return;
@@ -135,28 +145,51 @@ async function load(autoplay = true) {
   if (state.queue[state.index]?.uid !== uid) return; // skipped meanwhile
   const ok = await engine.load(source);
   if (!ok || state.queue[state.index]?.uid !== uid) return;
+  if (failedUid === uid) failedUid = null; // new source loaded: it may fail (once) again
   engine.setRate(state.rate);
   engine.setVolume(state.volume);
   state.loading = null;
   hints();
   prefetchUpcoming();
+  if (startAt > 1) engine.seek(startAt);
   if (autoplay) engine.play();
   emit();
 }
 
 function fail(message) {
+  const entry = state.queue[state.index];
+  if (entry && failedUid === entry.uid) return; // already handled for this song
+  failedUid = entry?.uid ?? null;
+  const it = current();
+  const at = state.position;
+  // A refused stream link (HTTP 403/410): links are bound to the network that resolved
+  // them and expire, so fetch a fresh one once and carry on where the song was.
+  if (entry && needsStream(it) && /expired|403|410/i.test(message) && retriedUid !== entry.uid && online.value) {
+    retriedUid = entry.uid;
+    state.error = null;
+    state.loading = 'stream';
+    emit();
+    load(true, { fresh: true, startAt: at });
+    return;
+  }
   state.loading = null;
   state.playing = false;
-  state.error = message;
+  state.error = /expired/i.test(message) ? 'YouTube refused this stream' : message;
   emit();
-  const it = current();
-  // Missing/undecodable at the very start: skip on so the music keeps going (max 3 in a row).
-  if (state.position < 1 && errorStreak < 3 && state.index < state.queue.length - 1) {
+  const hasNext = state.index < state.queue.length - 1;
+  // Failed at the very start: move on so the music keeps going, but only a few songs in a
+  // row, and never behind the user's back: any control cancels the pending skip.
+  if (at < 1 && hasNext && errorStreak < MAX_AUTO_SKIPS - 1) {
     errorStreak++;
-    toast(`Skipped “${it?.title || 'song'}”`, { kind: 'danger', sub: message });
-    setTimeout(() => skipForward(true), 600);
+    toast(`Couldn’t play “${it?.title || 'this song'}”, skipping`, { kind: 'danger', sub: state.error });
+    skipTimer = setTimeout(() => { skipTimer = null; skipForward(true); }, 1200);
+  } else if (at < 1 && hasNext) {
+    errorStreak = 0;
+    state.error = `${MAX_AUTO_SKIPS} songs in a row couldn’t play. Check your connection, then press play.`;
+    emit();
+    toast('Stopped skipping: several songs couldn’t play', { kind: 'danger', sub: 'Check your internet connection and try again.', ms: 8000 });
   } else {
-    toast(message, { kind: 'danger', action: state.index < state.queue.length - 1 ? { label: 'Skip', run: () => player.next() } : null });
+    toast(state.error, { kind: 'danger', action: hasNext ? { label: 'Skip', run: () => player.next() } : null });
   }
 }
 
@@ -288,6 +321,7 @@ export const player = {
 
   /** Replaces the queue with `items` and plays items[index]. context: { type, id?, name }. */
   play(items, index = 0, context = null) {
+    cancelAutoSkip();
     const list = (items || []).filter(Boolean);
     if (!list.length) return;
     index = Math.min(Math.max(0, index), list.length - 1);
@@ -315,21 +349,23 @@ export const player = {
   },
 
   toggle() { if (!current()) return; if (state.playing) player.pause(); else player.resume(); },
-  pause() { engine?.pause(); },
+  pause() { cancelAutoSkip(); engine?.pause(); },
   resume() {
+    cancelAutoSkip();
     if (!current()) return;
     if (state.error || state.ended) { state.ended = false; return load(true); }
     if (state.loading) return;
     engine.play();
   },
-  next() { if (state.queue.length) { errorStreak = 0; if (!skipForward(false)) emit(); } },
+  next() { cancelAutoSkip(); if (state.queue.length) { errorStreak = 0; if (!skipForward(false)) emit(); } },
   prev() {
+    cancelAutoSkip();
     if (!current()) return;
     if (state.position > 3 || state.index === 0) { engine.seek(0); if (!state.playing) engine.play(); return; }
     state.index -= 1;
     load(true);
   },
-  seek(secs) { engine?.seek(Math.max(0, Math.min(secs, state.duration || secs))); },
+  seek(secs) { cancelAutoSkip(); engine?.seek(Math.max(0, Math.min(secs, state.duration || secs))); },
   seekBy(delta) { player.seek(state.position + delta); },
   seekFraction(f) { if (state.duration) player.seek(f * state.duration); },
   setVolume(v) { state.volume = Math.min(1, Math.max(0, v)); engine?.setVolume(state.volume * fadeGain); LS('player.volume', String(state.volume)); emit(); },
@@ -404,7 +440,7 @@ export const player = {
   clearQueue() { state.queue = state.queue.slice(0, state.index + 1); originalOrder = null; hints(); emit(); },
   shuffleUpNext() { const { added, rest } = upNext(); state.queue = [...state.queue.slice(0, state.index + 1), ...added, ...shuffleArray(rest.slice())]; prefetchUpcoming(); emit(); },
   /** Stops and empties the player. */
-  stop() { engine?.stop?.(); state.queue = []; state.index = -1; state.context = null; state.playing = false; state.error = null; state.loading = null; state.position = state.duration = 0; emit(); emitTime(); },
+  stop() { cancelAutoSkip(); engine?.stop?.(); state.queue = []; state.index = -1; state.context = null; state.playing = false; state.error = null; state.loading = null; state.position = state.duration = 0; emit(); emitTime(); },
 
   // ---- current song actions ----
   async toggleLike() {

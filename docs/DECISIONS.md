@@ -611,3 +611,45 @@ themselves from GitHub.
 it must be backed up. The current phone install was signed with the old debug key, so it has
 to be replaced once by a build signed with the new key; after that, updates install over it.
 The Windows and macOS builds are compiled only in CI; they cannot be tested on this machine.
+
+## D46 · 2026-10-22 · Streaming 403s, the skip storm, and the keyboard covering inputs
+
+**Context.** On the phone, every stream failed with ExoPlayer `ERROR_CODE_IO_BAD_HTTP_STATUS`
+(HTTP 403). The player then skipped song after song and could not be stopped. The keyboard
+also covered text fields such as the new-playlist name.
+
+**Findings.**
+* The phone's yt-dlp was really 2025.11.12 (bundled in the APK). The 2026-10-20 phone swap
+  restored `shared_prefs/youtubedl-android.xml`, which recorded 2026.08.19, so the library
+  believed it was current and never updated. The old version does not know the `visionos`
+  client, so it fell back to the ANDROID client, whose links YouTube now refuses (403) without
+  PO tokens. Tests on the PC: of visionos, android_vr, tv, tv_simply, web_safari, mweb, ios,
+  android and web_music, only `visionos` gives a playable itag 140. The `web_embedded` fallback
+  from D41 now also gets 403. The address family and headers were checked and ruled out: the
+  stream connection used the IPv6 address the link is bound to.
+* Skip storm. `fail()` scheduled a skip that nothing could cancel. It also ran several times
+  per failed song: the engine reported the error from both the error event (as "expired") and
+  state snapshots (as the raw ExoPlayer name), and its sticky `error` repeated on every later
+  state change.
+* Keyboard. With edge-to-edge drawing, Android no longer resizes the window for the IME, and
+  `MainActivity` padded only for the system bars.
+
+**Decision.**
+* yt-dlp runs with `player_client=visionos,default` (fallback `visionos,web_embedded,default`)
+  on desktop and Android, for streams and downloads.
+* Android updates yt-dlp by itself at start-up, at most daily. It first compares the real
+  `--version` with the library's record and clears a stale record. A fresh install therefore
+  streams again within seconds of its first start, without a new APK.
+* `resolve` returns yt-dlp's `http_headers` with the URL, and the native player sends them.
+  This is defensive: some clients' links need their own User-Agent.
+* `youtube_stream_url(videoId, fresh?)`. After a 403/410 the player resolves a fresh link once
+  and continues at the same position. A cached link can be stale after a network switch.
+* Each queue entry fails at most once. An auto-skip is cancelled by any control (play, pause,
+  next, previous, seek, stop). After 3 failed songs in a row it stops and says so. Engine errors
+  come only from `playback://error`, and messages are in plain words.
+* `MainActivity` pads the bottom by `max(system bars, IME)`, so the page shrinks above the
+  keyboard.
+
+**Consequences.** Streaming depends on yt-dlp keeping up with YouTube; the daily auto-update
+covers that on the phone. When `visionos` stops working too, the client list is the place to
+change.

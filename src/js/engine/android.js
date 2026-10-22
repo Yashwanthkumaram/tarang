@@ -45,8 +45,9 @@ export async function createAndroidEngine() {
     if (!s || typeof s !== 'object') return;
     native = { ...native, ...s };
     const playing = !!s.playing || (!!s.play_when_ready && !!s.buffering && !s.ended);
+    // Errors are taken only from playback://error (with the HTTP status). State snapshots
+    // repeat the same error in raw form; reporting both made one failed song skip twice.
     const patch = { playing, buffering: !!s.buffering, ended: !!s.ended };
-    if (s.error) patch.error = s.error;
     setState(patch);
     emitTime();
     schedulePoll();
@@ -67,11 +68,19 @@ export async function createAndroidEngine() {
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') poll(); });
   }
 
+  /** ExoPlayer's error names (ERROR_CODE_IO_BAD_HTTP_STATUS: Source error) → plain words. */
+  const friendlyError = (msg = '') =>
+    /NETWORK|TIMEOUT|CONNECTION|IO_/i.test(msg) ? 'Couldn’t reach the stream. Check your connection.'
+      : /DECOD|PARSING|UNSUPPORTED|MALFORMED/i.test(msg) ? 'This song’s audio couldn’t be played.'
+      : /FILE_NOT_FOUND|NO_PERMISSION/i.test(msg) ? 'The file can’t be opened. It may have been moved or deleted.'
+      : 'Playback failed';
+
   await listen('playback://state', apply);
   await listen('playback://ended', (s) => apply({ ...s, ended: true, playing: false }));
   await listen('playback://error', (e) => {
     const expired = e?.http_status === 403 || e?.http_status === 410;
-    setState({ playing: false, buffering: false, error: expired ? 'Stream link expired, try again' : (e?.message || 'Playback failed') });
+    // `expired` is recognised by player.js, which then fetches a fresh link once (D46).
+    setState({ playing: false, buffering: false, error: expired ? 'Stream link expired' : friendlyError(e?.message) });
   });
   await listen('playback://remote', (r) => {
     if (!r?.action) return;
@@ -88,19 +97,19 @@ export async function createAndroidEngine() {
     name: 'android',
 
     /** Loads a source without starting playback. Resolves false when superseded by a newer load. */
-    async load({ src, path, videoId, duration: d } = {}) {
+    async load({ src, path, videoId, headers, duration: d } = {}) {
       const seq = ++loadSeq;
       durationHint = d || 0;
       setState({ playing: false, buffering: true, ended: false, error: null });
       try {
         let url = src || null;
-        if (!url && !path && videoId) url = (await invoke('youtube_stream_url', { videoId })).url;
+        if (!url && !path && videoId) ({ url, headers } = await invoke('youtube_stream_url', { videoId }));
         if (!url && !path) throw new Error('Nothing to play: no file path or stream link');
         if (seq !== loadSeq) return false;
         const s = await invoke('playback_load', {
           url: path ? null : url, path: path || null, videoId: videoId || null,
           title: meta.title, artist: meta.artist, album: meta.album, artworkUrl: meta.artwork,
-          autoplay: false,
+          autoplay: false, headers: path ? null : (headers || null),
         });
         if (seq !== loadSeq) return false;
         loaded = true;

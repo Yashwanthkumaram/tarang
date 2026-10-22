@@ -17,7 +17,8 @@ import androidx.core.view.WindowInsetsCompat
 
 /**
  * Hosts the Tauri webview. Android-specific logic lives here only:
- *  - keep the web content between the status bar and the navigation bar
+ *  - keep the web content between the status bar and the navigation bar, and above the
+ *    on-screen keyboard while it is open
  *  - ask for storage access so the Rust scanner can walk shared storage
  *  - ask for the notification permission (Android 13+) for the playback notification
  */
@@ -29,12 +30,18 @@ class MainActivity : TauriActivity() {
     requestStorageAccess()
   }
 
-  /** The WebView cannot see edge-to-edge insets through CSS env(), so pad the content view. */
+  /**
+   * The WebView cannot see edge-to-edge insets through CSS env(), so pad the content view.
+   * Edge-to-edge also turns off the window resize for the keyboard, so the bottom padding
+   * includes the keyboard (IME) height: the page shrinks above it and the focused field
+   * stays visible.
+   */
   private fun applySystemBarInsets() {
     val content = findViewById<View>(android.R.id.content)
     ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
       val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-      view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+      val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
+      view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
       insets
     }
   }

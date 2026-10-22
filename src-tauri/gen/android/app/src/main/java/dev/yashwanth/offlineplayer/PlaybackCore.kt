@@ -67,6 +67,8 @@ object PlaybackCore {
   private var cacheMb: Long = 0
   private var dbProvider: StandaloneDatabaseProvider? = null
   private var streamFactory: DefaultMediaSourceFactory? = null
+  private var http: DefaultHttpDataSource.Factory? = null
+  private var defaultUserAgent: String? = null
   private var localFactory: DefaultMediaSourceFactory? = null
 
   var hasPrev = false; private set
@@ -105,6 +107,8 @@ object PlaybackCore {
     val url: String?, val path: String?, val videoId: String?,
     val title: String?, val artist: String?, val album: String?, val artworkUrl: String?,
     val cacheMb: Long, val autoplay: Boolean, val startMs: Long,
+    /** HTTP headers the stream URL needs (yt-dlp's http_headers), User-Agent included. */
+    val headers: Map<String, String> = emptyMap(),
   )
 
   fun load(ctx: Context, s: Source) {
@@ -129,7 +133,7 @@ object PlaybackCore {
     val mediaItem = item.build()
     val factory = if (local) localFactory(ctx) else {
       if (cache != null && s.cacheMb != cacheMb) p.clearMediaItems() // free the old cache's spans
-      streamFactory(ctx, s.cacheMb)
+      streamFactory(ctx, s.cacheMb).also { applyHeaders(s.headers) }
     }
     p.setMediaSource(factory.createMediaSource(mediaItem), if (s.startMs > 0) s.startMs else 0L)
     p.prepare()
@@ -234,12 +238,23 @@ object PlaybackCore {
   }
 
   private fun httpFactory(ctx: Context): DefaultHttpDataSource.Factory {
-    // Same user agent the WebView used when it played these links (D22), which googlevideo accepts.
-    val ua = try { WebSettings.getDefaultUserAgent(ctx) } catch (_: Exception) { null }
+    // Default: the WebView's user agent (D22). Each stream load then applies the headers
+    // yt-dlp reported for its URL (applyHeaders), since some player clients' links are
+    // refused with 403 unless the request carries that client's own User-Agent (D46).
+    defaultUserAgent = try { WebSettings.getDefaultUserAgent(ctx) } catch (_: Exception) { null }
     val f = DefaultHttpDataSource.Factory().setAllowCrossProtocolRedirects(true)
       .setConnectTimeoutMs(15_000).setReadTimeoutMs(20_000)
-    if (ua != null) f.setUserAgent(ua)
+    defaultUserAgent?.let { f.setUserAgent(it) }
+    http = f
     return f
+  }
+
+  /** Headers for the stream about to load; data sources created from now on use them. */
+  private fun applyHeaders(headers: Map<String, String>) {
+    val f = http ?: return
+    val ua = headers.entries.firstOrNull { it.key.equals("User-Agent", ignoreCase = true) }?.value
+    f.setUserAgent(ua ?: defaultUserAgent)
+    f.setDefaultRequestProperties(headers.filterKeys { !it.equals("User-Agent", ignoreCase = true) })
   }
 
   private fun streamFactory(ctx: Context, mb: Long): DefaultMediaSourceFactory {

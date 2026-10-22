@@ -165,11 +165,13 @@ print('compiled', n)
     }
 
     /** Normal yt-dlp YouTube options: audio comes from the player response, so the
-     *  HLS/DASH manifests and translated subtitles are never fetched. */
-    const val EXTRACTOR_ARGS = "youtube:skip=hls,dash,translated_subs"
+     *  HLS/DASH manifests and translated subtitles are never fetched. `visionos` first: it is
+     *  the only client whose audio links play without anti-bot tokens; the phone's default
+     *  pick (ANDROID) returns links that answer 403 (D46). */
+    const val EXTRACTOR_ARGS = "youtube:player_client=visionos,default;skip=hls,dash,translated_subs"
     /** Options once YouTube has blocked this address: the embedded-player client still
      *  gets stream URLs there; the default clients stay in the list for non-embeddable songs. */
-    const val BLOCKED_EXTRACTOR_ARGS = "youtube:player_client=web_embedded,default;skip=hls,dash,translated_subs"
+    const val BLOCKED_EXTRACTOR_ARGS = "youtube:player_client=visionos,web_embedded,default;skip=hls,dash,translated_subs"
 
     /** True while this network's address is known to be blocked by YouTube. */
     @Volatile private var blocked = false
@@ -177,6 +179,8 @@ print('compiled', n)
     @Volatile private var prefs: android.content.SharedPreferences? = null
     private const val BLOCKED_KEY = "address_blocked_until"
     private const val BLOCKED_TTL_MS = 12L * 3600 * 1000
+    private const val AUTO_UPDATE_KEY = "auto_update_checked_at"
+    private const val AUTO_UPDATE_EVERY_MS = 24L * 3600 * 1000
 
     /** yt-dlp's cache (player JS and solved signature challenges). Without it every run
      *  re-downloads and re-solves the player, which costs tens of seconds with quickjs. */
@@ -242,6 +246,7 @@ print('compiled', n)
     thread(name = "ytdlp-init") {
       try {
         ensureInit(activity)
+        autoUpdate(activity.applicationContext)
         precompileYtdlp(activity.applicationContext)
         warmUp()
       } catch (e: Exception) {
@@ -268,13 +273,22 @@ print('compiled', n)
           req.addOption("--no-warnings")
           req.addOption("-f", "140/bestaudio[ext=m4a]/bestaudio")
           req.addOption("--extractor-args", xargs)
-          req.addOption("-g")
+          // URL plus the HTTP headers googlevideo expects for it: links from some player
+          // clients (e.g. ANDROID) answer 403 to any other User-Agent (D46).
+          req.addOption("--print", "%(url)s\t%(http_headers)j")
           req
         }
-        val url = resp.out.lines().map { it.trim() }.firstOrNull { it.startsWith("http") }
-        if (url == null) { invoke.reject("yt-dlp returned no stream URL"); return@thread }
+        val line = resp.out.lines().map { it.trim() }.firstOrNull { it.startsWith("http") }
+        if (line == null) { invoke.reject("yt-dlp returned no stream URL"); return@thread }
+        val url = line.substringBefore('\t')
+        val headers = JSObject()
+        try {
+          val h = org.json.JSONObject(line.substringAfter('\t', "{}"))
+          for (k in h.keys()) headers.put(k, h.getString(k))
+        } catch (_: Exception) { /* no headers: plain URL */ }
         val out = JSObject()
         out.put("url", url)
+        out.put("headers", headers)
         out.put("ms", System.currentTimeMillis() - t)
         invoke.resolve(out)
       } catch (e: Exception) {
@@ -366,6 +380,35 @@ print('compiled', n)
       } catch (e: Exception) {
         invoke.reject(e.message ?: "yt-dlp not ready")
       }
+    }
+  }
+
+  /**
+   * Keeps yt-dlp current without the user doing anything (D46): YouTube changes often, and
+   * the copy bundled in the APK stops streaming within weeks (it returned links that answer
+   * 403). At most once a day, at start-up. First compares the real `yt-dlp --version` with
+   * the version the library has recorded: when they differ (e.g. app data restored onto a
+   * fresh install), the record is cleared so the library does not skip the download.
+   */
+  private fun autoUpdate(context: Context) {
+    val p = context.getSharedPreferences("ytdlp", Context.MODE_PRIVATE)
+    val now = System.currentTimeMillis()
+    if (now - p.getLong(AUTO_UPDATE_KEY, 0L) < AUTO_UPDATE_EVERY_MS) return
+    try {
+      val actual = YoutubeDL.getInstance()
+        .execute(YoutubeDLRequest(emptyList<String>()).apply { addOption("--version") })
+        .out.trim()
+      val recorded = YoutubeDL.getInstance().version(context)
+      if (actual.isNotEmpty() && actual != recorded) {
+        Log.i(TAG, "yt-dlp is $actual but recorded as $recorded; forcing an update")
+        context.getSharedPreferences("youtubedl-android", Context.MODE_PRIVATE).edit()
+          .remove("dlpVersion").remove("dlpVersionName").apply()
+      }
+      val status = YoutubeDL.getInstance().updateYoutubeDL(context, YoutubeDL.UpdateChannel.STABLE)
+      Log.i(TAG, "yt-dlp auto-update: $status (${YoutubeDL.getInstance().version(context)})")
+      p.edit().putLong(AUTO_UPDATE_KEY, now).apply()
+    } catch (e: Exception) {
+      Log.w(TAG, "yt-dlp auto-update failed (offline?): ${e.message}") // try again next start
     }
   }
 

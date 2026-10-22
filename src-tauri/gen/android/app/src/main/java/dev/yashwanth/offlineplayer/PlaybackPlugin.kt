@@ -51,6 +51,8 @@ class PlaybackPlugin(private val activity: Activity) : Plugin(activity) {
     var cacheMb: Long = PlaybackCore.DEFAULT_CACHE_MB
     var autoplay: Boolean = false
     var startMs: Long = 0
+    /** HTTP headers the stream URL needs (from yt-dlp), e.g. its User-Agent. */
+    var headers: Map<String, String>? = null
   }
 
   @InvokeArg class SeekArgs { var ms: Long = 0 }
@@ -98,7 +100,7 @@ class PlaybackPlugin(private val activity: Activity) : Plugin(activity) {
     onMain(invoke) {
       PlaybackCore.load(activity, PlaybackCore.Source(
         a.url, a.path, a.videoId, a.title, a.artist, a.album, a.artworkUrl,
-        a.cacheMb, a.autoplay, a.startMs,
+        a.cacheMb, a.autoplay, a.startMs, a.headers ?: emptyMap(),
       ))
       ensureService()
       invoke.resolve(PlaybackCore.state())

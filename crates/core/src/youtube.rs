@@ -161,11 +161,13 @@ pub mod ytdlp {
     /// A system `yt-dlp` on PATH, else the copy we downloaded into the app data dir.
     /// Normal `--extractor-args`: audio comes from the player response, so the HLS/DASH
     /// manifests (one request each, ~0.7 s) and translated subtitles are never fetched.
-    pub const EXTRACTOR_ARGS: &str = "youtube:skip=hls,dash,translated_subs";
+    /// `visionos` first: since Oct 2026 it is the only client whose audio links play without
+    /// YouTube's anti-bot (PO) tokens; others, e.g. ANDROID, return links that answer 403 (D46).
+    pub const EXTRACTOR_ARGS: &str = "youtube:player_client=visionos,default;skip=hls,dash,translated_subs";
     /// Used once YouTube has blocked this network's address (D41): the embedded-player
     /// client still gets stream URLs there; the default clients stay in the list for songs
     /// that cannot be embedded.
-    pub const BLOCKED_EXTRACTOR_ARGS: &str = "youtube:player_client=web_embedded,default;skip=hls,dash,translated_subs";
+    pub const BLOCKED_EXTRACTOR_ARGS: &str = "youtube:player_client=visionos,web_embedded,default;skip=hls,dash,translated_subs";
     /// How long a detected block is remembered before the normal clients are tried again.
     const BLOCKED_TTL_SECS: u64 = 12 * 3600;
     static BLOCKED_UNTIL: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
