@@ -1,6 +1,6 @@
 {
   "name": "tarang",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Tarang: an offline-first music player for desktop and Android",
   "scripts": {
     "tauri": "tauri"
